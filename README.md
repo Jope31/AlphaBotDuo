@@ -18,7 +18,7 @@ Alpha Bot operates entirely locally and acts as an intraday guardian for your sy
 
 ## **🛠️ Prerequisites & Setup**
 
-1. **Python 3.8+** installed on your system.  
+1. **Python 3.13+** installed on your system.  
 2. Clone this repository and install the required dependencies:  
    pip install requests numpy python-dotenv
 
