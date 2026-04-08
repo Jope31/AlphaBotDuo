@@ -1,0 +1,96 @@
+import os
+import json
+import time
+import threading
+import subprocess
+import schedule
+from datetime import datetime
+from flask import Flask, render_template, jsonify, request
+from dotenv import dotenv_values, set_key, find_dotenv
+
+app = Flask(__name__)
+
+# --- 1. Bot Execution Logic ---
+def trigger_alpha_bot():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Triggering Alpha Bot...")
+    try:
+        subprocess.run(["python", "alpha_bot_final.py"], check=True)
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Execution failed: {e}")
+
+# --- 2. Background Scheduler ---
+def run_scheduler():
+    schedule.every(5).minutes.do(trigger_alpha_bot)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+# --- 3. Web Dashboard Routes ---
+@app.route('/')
+def dashboard():
+    return render_template('index.html')
+
+@app.route('/api/state')
+def get_state():
+    try:
+        if not os.path.exists('bot_state.json'):
+            return jsonify({"status": "waiting", "message": "bot_state.json not created yet."})
+            
+        with open('bot_state.json', 'r') as f:
+            state_data = json.load(f)
+            
+        return jsonify({"status": "active", "state": state_data})
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/trigger', methods=['POST'])
+def manual_trigger():
+    threading.Thread(target=trigger_alpha_bot).start()
+    return jsonify({"status": "success", "message": "Bot execution started in background."})
+
+# --- 4. Settings/Control Panel Routes ---
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Reads the current algorithm parameters from the .env file."""
+    env_vars = dotenv_values('.env')
+    return jsonify({
+        "TRIGGER_THRESHOLD_PCT": env_vars.get("TRIGGER_THRESHOLD_PCT", "15.0"),
+        "ATR_LOOKBACK_DAYS": env_vars.get("ATR_LOOKBACK_DAYS", "14"),
+        "BASE_ATR_MULTIPLIER": env_vars.get("BASE_ATR_MULTIPLIER", "2.0"),
+        "RED_DAY_ATR_MULTIPLIER": env_vars.get("RED_DAY_ATR_MULTIPLIER", "0.75"),
+        "MIN_MULTIPLIER_FLOOR": env_vars.get("MIN_MULTIPLIER_FLOOR", "0.5")
+    })
+
+@app.route('/api/settings', methods=['POST'])
+def save_settings():
+    """Safely updates specific algorithm parameters in the .env file."""
+    data = request.json
+    env_file = find_dotenv()
+    if not env_file:
+        env_file = '.env' # Fallback
+    
+    # We explicitly define allowed keys so the API can't overwrite API keys
+    allowed_keys = [
+        "TRIGGER_THRESHOLD_PCT", 
+        "ATR_LOOKBACK_DAYS", 
+        "BASE_ATR_MULTIPLIER", 
+        "RED_DAY_ATR_MULTIPLIER", 
+        "MIN_MULTIPLIER_FLOOR"
+    ]
+    
+    try:
+        for key in allowed_keys:
+            if key in data:
+                # set_key safely updates or adds the key without breaking other file contents
+                set_key(env_file, key, str(data[key]))
+                
+        return jsonify({"status": "success", "message": "Variables updated successfully! Applied to next run."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print("\n🚀 Starting Alpha Bot Control Center at http://localhost:5000\n")
+    app.run(port=5000, debug=False)
