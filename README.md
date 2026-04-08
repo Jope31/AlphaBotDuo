@@ -30,19 +30,28 @@ Alpha\_Bot\_Project/
    ```pip install flask schedule python-dotenv requests numpy```
 
 2. **Initial Configuration:**  
-   Create an empty .env file in your root folder (or use your existing one). You can input all your keys directly through the web dashboard once it's running.
-   
-4. **Run the Control Center:**  
-   Start the master application:  
+   Create an empty ```.env``` file in your root folder (or use your existing one). You can input all your keys directly through the web dashboard once it's running.  
+
+3. **Run the Control Center:**  
+   Start the master application in a terminal window:  
    ```python app.py```
 
-   *Note: This starts a background thread that runs alpha\_bot\_final.py every 5 minutes, while simultaneously hosting the web dashboard.*  
-5. **Access the Dashboard:**  
-   Open your browser and navigate to http://localhost:5000. Click **Edit Variables** to configure your accounts and risk settings.
+4. **Access the Dashboard:**  
+   Open your browser and navigate to ```http://localhost:5000```. Click **Edit Variables** to configure your accounts and risk settings.
+
+## **⏱️ Scheduling & Manual Triggers**
+
+**Automated 24/7 Execution**
+
+Once you start ```app.py```, the bot does not wait for the market bell. It automatically runs **every 5 minutes, 24 hours a day**. It independently detects when a new trading day begins (UTC-5) to wipe its intraday memory, meaning you can leave the application running permanently without intervention.
+
+**"Force Run Now" Mechanism**
+
+Clicking the "Force Run Now" button on the dashboard immediately spawns a separate, independent background thread to execute the bot's logic right that second. This bypasses the waiting period and updates your dashboard instantly, all without interrupting, resetting, or pausing the primary 5-minute schedule running in the background.
 
 ## **🎛️ The Control Panel**
 
-You can adjust these settings directly from the web dashboard by clicking **Edit Variables**. Changes are saved to your .env file and applied instantly to the very next scheduled bot execution.
+You can adjust these settings directly from the web dashboard by clicking **Edit Variables**. Changes are saved to your ```.env``` file and applied instantly to the very next scheduled bot execution.
 
 ### **API Credentials & Accounts**
 
@@ -62,9 +71,9 @@ You can adjust these settings directly from the web dashboard by clicking **Edit
 
 ## **🛠️ How It Works (The Execution Loop)**
 
-1. **Scheduler:** app.py triggers alpha\_bot\_final.py every 5 minutes.  
+1. **Scheduler:** ```app.py``` triggers ```alpha_bot_final.py``` every 5 minutes.  
 2. **Data Fetching:** The bot retrieves current holdings/returns from Composer and historical price data from Alpaca.  
-3. **Evaluation:** Updates the local bot\_state.json with the highest observed return (High Water Mark).  
-4. **Monte Carlo:** Calculates the probability of beating the current return by end-of-day. If below TRIGGER\_THRESHOLD\_PCT, the symphony is marked "armed": true.  
-5. **Execution:** If Armed, the bot calculates the trailing stop based on Volatility (NATR) \* Multiplier. If the drawdown from the peak exceeds this stop, it executes a sell-all command via the Composer API and sends a Discord alert.  
-6. **Dashboard Monitoring:** The web UI reads bot\_state.json every 5 seconds to provide a live-updating view of the entire system's state.
+3. **Evaluation:** Updates the local ```bot_state.json``` with the highest observed return (High Water Mark).  
+4. **Monte Carlo:** Calculates the probability of beating the current return by end-of-day. If below ```TRIGGER_THRESHOLD_PCT```, the symphony is marked ```"armed": true```.  
+5. **Execution:** If ```Armed```, the bot calculates the trailing stop based on Volatility (NATR) \* Multiplier. If the drawdown from the peak exceeds this stop, it executes a sell-all command via the Composer API and sends a Discord alert.  
+6. **Dashboard Monitoring:** The web UI reads ```bot_state.json``` every 5 seconds to provide a live-updating view of the entire system's state.
