@@ -1,58 +1,66 @@
-# **Alpha Bot: Volatility-Adjusted Trailing Stop for Composer.trade**
+# **Alpha Bot Control Center**
 
-Alpha Bot is a stateful, algorithmic trading companion script designed to sit on top of your [Composer.trade](https://www.composer.trade/) portfolio.
+Alpha Bot is an automated trading and risk management system built for Composer.trade. It utilizes Monte Carlo simulations and Volatility-Adjusted Trailing Stops (via Normalized Average True Range) to protect profits and limit drawdowns on algorithmic trading strategies (Symphonies).
 
-Instead of relying on rigid, pre-programmed exit rules, Alpha Bot uses live Monte Carlo simulations and dynamically calculates the Normalized Average True Range (NATR) of your specific holdings to implement a highly intelligent, volatility-adjusted trailing stop.
+The system features a live web dashboard that allows you to monitor the state of your portfolio across multiple accounts and dynamically adjust algorithmic risk parameters on the fly.
 
-## **🧠 How It Works**
+## **🌟 Key Features**
 
-Alpha Bot operates entirely locally and acts as an intraday guardian for your symphonies:
+* **Live Web Dashboard:** Monitor all symphonies across multiple Composer accounts in real-time. View Current Returns, High Water Marks, and Monte Carlo Probabilities.  
+* **Monte Carlo "Arming":** Simulates 5,000 potential future paths based on historical Alpaca data. If the probability of beating the current return drops below a threshold, the bot "arms" a trailing stop.  
+* **Volatility-Adjusted Stops:** Calculates the Normalized Average True Range (NATR) of your specific holdings to create a dynamic trailing stop that breathes with the market.  
+* **The "Profit Parachute":** Automatically tightens the trailing stop multiplier when a symphony goes parabolic (Current Return \> Volatility).  
+* **Discord Alerts:** Rich webhook notifications sent immediately upon execution.  
+* **Strategy Control Panel:** Edit your .env risk variables directly from the web interface to change the bot's behavior without restarting or editing code.
 
-1. **The Intraday Memory (High Water Mark):** The bot continuously tracks the live returns of your symphonies. It records the highest profit point reached during the day (the "High Water Mark") and saves it to a local bot\_state.json file.  
-2. **The Arming Mechanism (Monte Carlo):** Every time the bot wakes up, it looks at the current day's S\&P 500 (SPY) performance and finds the 150 most similar historical trading days over the last 3 years using Alpaca data. It then runs 5,000 Monte Carlo paths. If the probability of the symphony closing higher than its current return drops below a defined threshold (e.g., 15%), the bot enters an **ARMED** state.  
-3. **The Volatility Leash (NATR):** Once armed, the bot calculates how much your specific holdings *normally* swing in a day (the NATR). It multiplies this by a baseline factor (e.g., 2.0x) to set a dynamic trailing stop.  
-   * *High volatility assets get a wider leash.*  
-   * *Low volatility assets get a tighter leash.*  
-4. **The Profit Parachute:** If a symphony goes on a massive run and its intraday peak exceeds its normal daily volatility, the bot automatically begins shrinking the trailing stop multiplier. The higher it flies, the tighter the leash becomes, violently protecting outlier profits.  
-5. **The Red Day Defense:** If the market gaps down overnight, the bot automatically switches to a defensive posture, applying a much tighter multiplier (e.g., 0.75x) to cut losses quickly on weak opens.  
-6. **Execution:** If the live return falls below the dynamic trailing stop distance from the High Water Mark, the bot executes a "Sell all to Cash" command via the Composer API and fires a Discord alert.
+## **📂 Project Structure**
 
-## **🛠️ Prerequisites & Setup**
+Alpha\_Bot\_Project/  
+├── .env                    \# API Keys and Algorithm Parameters  
+├── alpha\_bot\_final.py      \# Core Bot Engine (Math, API Calls, Execution)  
+├── app.py                  \# Flask Web Server & Background Scheduler  
+├── bot\_state.json          \# Local memory (High Water Marks, Armed status)  
+├── generate\_report.py      \# Generates end-of-day HTML reports  
+├── report\_template.html    \# Jinja2 template for the daily report  
+├── templates/  
+│   └── index.html          \# Web Dashboard UI  
+└── reports/                \# Auto-generated folder for ledgers and reports  
+    ├── ledger\_YYYY-MM-DD.json  
+    └── report\_YYYY-MM-DD.html
 
-1. **Python 3.13+** installed on your system.  
-2. Clone this repository and install the required dependencies:  
-   pip install requests numpy python-dotenv
+## **🚀 Installation & Setup**
 
-3. Create a .env file in the root directory with your API credentials:
+1. **Install Python Dependencies:**  
+   Ensure you have Python installed, then run:  
+   pip install flask schedule python-dotenv requests numpy jinja2
 
-\# API Credentials  
-COMPOSER\_KEY\_ID=your\_composer\_key\_here  
-COMPOSER\_SECRET=your\_composer\_secret\_here  
-ACCOUNT\_UUIDS=uuid\_1,uuid\_2
+2. **Configure Environment Variables:**  
+   Update your .env file with your API credentials (Composer, Alpaca, Discord) and your Account UUIDs (comma-separated).  
+3. **Run the Control Center:**  
+   Instead of running the bot directly or using Windows Task Scheduler, start the master app:  
+   python app.py
 
-ALPACA\_KEY=your\_alpaca\_key\_here  
-ALPACA\_SECRET=your\_alpaca\_secret\_here
+   *Note: This starts a background thread that runs alpha\_bot\_final.py every 5 minutes, while simultaneously hosting the web dashboard.*  
+4. **Access the Dashboard:**  
+   Open your browser and navigate to http://localhost:5000.
 
-DISCORD\_WEBHOOK\_URL=\[https://discord.com/api/webhooks/\](https://discord.com/api/webhooks/)...
+## **🎛️ Strategy Control Panel Variables**
 
-\# Algorithm Parameters  
-TRIGGER\_THRESHOLD\_PCT=15.0  
-ATR\_LOOKBACK\_DAYS=14  
-BASE\_ATR\_MULTIPLIER=2.0  
-RED\_DAY\_ATR\_MULTIPLIER=0.75  
-MIN\_MULTIPLIER\_FLOOR=0.5
+You can adjust these values directly from the web dashboard by clicking **Edit Variables**. Changes are saved to your .env file and applied on the very next bot execution.
 
-## **📊 Example Output**
+| Variable | Default | Description & Tuning |
+| :---- | :---- | :---- |
+| TRIGGER\_THRESHOLD\_PCT | 15.0 | **The "Arming" switch.** The % of Monte Carlo paths needed to beat the current return. *Lower (5.0)* \= Aggressive/Patient. *Higher (25.0)* \= Conservative/Nervous. |
+| ATR\_LOOKBACK\_DAYS | 14 | **Volatility memory bank.** Days of history to calculate normal swings. *Lower (7)* \= Hyper-sensitive to recent chop. *Higher (30)* \= Smoother, consistent stops. |
+| BASE\_ATR\_MULTIPLIER | 2.0 | **Primary leash.** Multiplies normal volatility to set the stop distance. *Lower (1.25)* \= Tight leash, locks in fast. *Higher (3.0)* \= Diamond hands, ignores noise. |
+| RED\_DAY\_ATR\_MULTIPLIER | 0.75 | **Defensive leash.** Used ONLY if SPY opens lower than yesterday's close. *Lower (0.25)* \= Panic button on red days. *Higher (1.5)* \= Gives room for a morning recovery. |
+| MIN\_MULTIPLIER\_FLOOR | 0.5 | **Profit Parachute limit.** The tightest the stop is allowed to get when a stock goes parabolic. *Lower (0.1)* \= Strangles outliers instantly. *Higher (2.0)* \= Disables parachute. |
 
-### **Console Log (Tracking Mode)**
+## **🛠️ How It Works (The Execution Loop)**
 
-Fetching 3-year history from Alpaca for 12 tickers in batches...  
-  \-\> History download complete.  
-Market Conditioning Baseline (SPY on 2026-04-02): 0.45%  
-Market Open Tone: GREEN (Gap: 0.12%)
-
-Evaluating Account: a1b2c3d4-xxxx-xxxx  
-  \-\> Tech Momentum Core: Live Return \= 1.25% | High Water Mark \= 1.25% | Prob Beating \= 42.1%  
-  \-\> Copy of Nova Feaver FR: Live Return \= 0.31% | High Water Mark \= 0.31% | Prob Beating \= 14.8%  
-  \*\*\* WARNING: Copy of Nova Feaver FR ARMED. Monte Carlo Probability dropped below threshold. \*\*\*  
-  \-\> \[ARMED\] Stop Distance: 2.45% | Current Drawdown: 0.00%  
+1. **Scheduler:** app.py triggers alpha\_bot\_final.py every 5 minutes.  
+2. **Data Fetching:** The bot retrieves current holdings/returns from Composer and historical price data from Alpaca.  
+3. **Evaluation:** Updates the bot\_state.json with the highest observed return (High Water Mark).  
+4. **Monte Carlo:** Calculates the probability of beating the current return by end-of-day. If below TRIGGER\_THRESHOLD\_PCT, the symphony is marked "armed": true.  
+5. **Execution:** If Armed, the bot calculates the trailing stop based on Volatility (NATR) \* Multiplier. If the drawdown from the peak exceeds this stop, it executes a sell-all command via Composer API and sends a Discord alert.  
+6. **Dashboard:** The web UI reads bot\_state.json every 5 seconds to provide a live-updating view of the entire system.
