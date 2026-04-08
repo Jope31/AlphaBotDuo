@@ -1,384 +1,111 @@
 import os
-import time
 import json
-import requests
-import numpy as np
-from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
+import time
+import threading
+import subprocess
+import schedule
+from datetime import datetime
+from flask import Flask, render_template, jsonify, request
+from dotenv import dotenv_values, set_key, find_dotenv
 
-# ==========================================
-# 1. CONFIGURATION & CREDENTIALS
-# ==========================================
-# Load environment variables from .env file
-load_dotenv()
+app = Flask(__name__)
 
-COMPOSER_KEY_ID = os.getenv("COMPOSER_KEY_ID")
-COMPOSER_SECRET = os.getenv("COMPOSER_SECRET")
-# Parse comma-separated UUIDs into a list
-ACCOUNT_UUIDS = [uid.strip() for uid in os.getenv("ACCOUNT_UUIDS", "").split(",") if uid.strip()]
+# --- 1. Bot Execution Logic ---
+def trigger_alpha_bot():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Triggering Alpha Bot...")
+    try:
+        subprocess.run(["python", "alpha_bot_final.py"], check=True)
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Execution failed: {e}")
 
-ALPACA_KEY = os.getenv("ALPACA_KEY")
-ALPACA_SECRET = os.getenv("ALPACA_SECRET")
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+# --- 2. Background Scheduler ---
+def run_scheduler():
+    schedule.every(5).minutes.do(trigger_alpha_bot)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
-# Algorithm Parameters 
-TRIGGER_THRESHOLD_PCT = float(os.getenv("TRIGGER_THRESHOLD_PCT", "15.0"))
-SIMULATION_PATHS = 5000
-NEIGHBOR_K = 150 
+# --- 3. Web Dashboard Routes ---
+@app.route('/')
+def dashboard():
+    return render_template('index.html')
 
-# Trailing Stop & Volatility Settings
-ATR_LOOKBACK_DAYS = int(os.getenv("ATR_LOOKBACK_DAYS", "14"))
-BASE_ATR_MULTIPLIER = float(os.getenv("BASE_ATR_MULTIPLIER", "2.0"))
-RED_DAY_ATR_MULTIPLIER = float(os.getenv("RED_DAY_ATR_MULTIPLIER", "0.75"))
-MIN_MULTIPLIER_FLOOR = float(os.getenv("MIN_MULTIPLIER_FLOOR", "0.5"))
-
-# ==========================================
-# 2. STATE MANAGEMENT & LOGGING
-# ==========================================
-STATE_FILE = "bot_state.json"
-
-def load_state():
-    """Loads the intraday memory (High Water Marks and Armed Status)."""
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-def save_state(state):
-    """Saves the intraday memory to disk."""
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=4)
-
-# ==========================================
-# 3. API CONNECTORS & RATE LIMIT HANDLING
-# ==========================================
-
-def get_composer_headers():
-    return {
-        "x-api-key-id": COMPOSER_KEY_ID,
-        "authorization": f"Bearer {COMPOSER_SECRET}",
-        "Content-Type": "application/json"
-    }
-
-def fetch_symphony_stats(account_id):
-    """Fetches live returns and holdings for all symphonies in an account."""
-    url = f"https://api.composer.trade/api/v0.1/portfolio/accounts/{account_id}/symphony-stats-meta"
-    response = requests.get(url, headers=get_composer_headers())
-    time.sleep(1.5)  # Strict adherence to Composer's 1 req/sec limit
-    
-    if response.status_code == 200:
-        return response.json().get("symphonies", [])
-    print(f"Error fetching account {account_id}: {response.text}")
-    return []
-
-def execute_sell_to_cash(symphony_id, account_id):
-    """Triggers the 'Sell all assets, leave proceeds in cash' command."""
-    url = f"https://api.composer.trade/api/v0.1/deploy/symphonies/{symphony_id}/sell-all"
-    response = requests.post(url, headers=get_composer_headers())
-    time.sleep(1.5)
-    return response.status_code in [200, 201, 202]
-
-def send_discord_alert(symphony_name, current_return, prob_beating, drawdown, stop_distance):
-    """Sends a rich embedded message to Discord with trailing stop info."""
-    if not DISCORD_WEBHOOK_URL:
-        return
-        
-    payload = {
-        "embeds": [{
-            "title": "🚨 Profit Locked: Trailing Stop Triggered",
-            "color": 15158332, # Red color for stop out
-            "fields": [
-                {"name": "Symphony", "value": symphony_name, "inline": True},
-                {"name": "Exit Return", "value": f"{current_return:.2f}%", "inline": True},
-                {"name": "MC Probability", "value": f"{prob_beating:.1f}%", "inline": True},
-                {"name": "Drawdown from Peak", "value": f"{drawdown:.2f}%", "inline": True},
-                {"name": "Dynamic Stop Level", "value": f"{stop_distance:.2f}%", "inline": True},
-                {"name": "Action Taken", "value": "Executed 'Sell to Cash' via API.", "inline": False}
-            ],
-            "footer": {"text": "Alpha Bot • Volatility-Adjusted Trailing Stop"}
-        }]
-    }
-    requests.post(DISCORD_WEBHOOK_URL, json=payload)
-
-def fetch_alpaca_history(tickers):
-    """Fetches historical daily returns, OHLC data using batching and pagination."""
-    print(f"Fetching 3-year history from Alpaca for {len(tickers)} tickers in batches...")
-    
-    if "SPY" not in tickers:
-        tickers.append("SPY")
-        
-    start_date = (datetime.now() - timedelta(days=365*3 + 30)).strftime('%Y-%m-%dT00:00:00Z')
-    
-    headers = {
-        "APCA-API-KEY-ID": ALPACA_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_SECRET
-    }
-    
-    historical_data = {}
-    batch_size = 30 
-    
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
-        symbol_string = ",".join(list(set(batch)))
-        print(f"  -> Downloading batch {i//batch_size + 1}: {len(batch)} tickers...")
-        
-        page_token = None
-        
-        while True:
-            url = f"https://data.alpaca.markets/v2/stocks/bars?symbols={symbol_string}&timeframe=1Day&start={start_date}&limit=10000&adjustment=split"
-            if page_token:
-                url += f"&page_token={page_token}"
-                
-            response = requests.get(url, headers=headers)
-            if response.status_code != 200:
-                print(f"Alpaca API Error on batch: {response.text}")
-                break
-                
-            data = response.json()
+@app.route('/api/state')
+def get_state():
+    try:
+        if not os.path.exists('bot_state.json'):
+            return jsonify({"status": "waiting", "message": "bot_state.json not created yet."})
             
-            if "bars" in data:
-                for symbol, bars in data["bars"].items():
-                    for j in range(1, len(bars)):
-                        prev_close = bars[j-1]['c']
-                        curr_close = bars[j]['c']
-                        
-                        if prev_close > 0:
-                            daily_ret = (curr_close - prev_close) / prev_close
-                            date_str = bars[j]['t'][:10]
-                            
-                            if date_str not in historical_data:
-                                historical_data[date_str] = {}
-                            
-                            historical_data[date_str][symbol] = {
-                                'o': bars[j]['o'],
-                                'h': bars[j]['h'],
-                                'l': bars[j]['l'],
-                                'c': curr_close,
-                                'prev_c': prev_close,
-                                'daily_ret': daily_ret
-                            }
+        with open('bot_state.json', 'r') as f:
+            state_data = json.load(f)
             
-            page_token = data.get("next_page_token")
-            if not page_token:
-                break 
-                
-    print("  -> History download complete.")
-    return historical_data
-
-# ==========================================
-# 4. MATH ENGINE: VOLATILITY & MONTE CARLO
-# ==========================================
-
-def calculate_portfolio_natr(holdings, historical_data, lookback_days=14):
-    """Calculates the Normalized Average True Range (percentage volatility) of the portfolio."""
-    valid_dates = sorted(list(historical_data.keys()))[-lookback_days:]
-    weighted_natr = 0.0
-    
-    for h in holdings:
-        ticker = h.get('working_ticker', h.get('ticker'))
-        weight = h.get('allocation', 0.0)
+        return jsonify({"status": "active", "state": state_data})
         
-        true_ranges = []
-        closes = []
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/trigger', methods=['POST'])
+def manual_trigger():
+    threading.Thread(target=trigger_alpha_bot).start()
+    return jsonify({"status": "success", "message": "Bot execution started in background."})
+
+# --- 4. Settings/Control Panel Routes ---
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Reads the current algorithm parameters and API keys from the .env file."""
+    env_vars = dotenv_values('.env')
+    return jsonify({
+        # API & Account Credentials
+        "COMPOSER_KEY_ID": env_vars.get("COMPOSER_KEY_ID", ""),
+        "COMPOSER_SECRET": env_vars.get("COMPOSER_SECRET", ""),
+        "ALPACA_KEY": env_vars.get("ALPACA_KEY", ""),
+        "ALPACA_SECRET": env_vars.get("ALPACA_SECRET", ""),
+        "ACCOUNT_UUIDS": env_vars.get("ACCOUNT_UUIDS", ""),
+        "DISCORD_WEBHOOK_URL": env_vars.get("DISCORD_WEBHOOK_URL", ""),
         
-        for date in valid_dates:
-            data = historical_data[date].get(ticker)
-            if data:
-                high = data['h']
-                low = data['l']
-                prev_c = data['prev_c']
+        # Strategy Parameters
+        "TRIGGER_THRESHOLD_PCT": env_vars.get("TRIGGER_THRESHOLD_PCT", "15.0"),
+        "ATR_LOOKBACK_DAYS": env_vars.get("ATR_LOOKBACK_DAYS", "14"),
+        "BASE_ATR_MULTIPLIER": env_vars.get("BASE_ATR_MULTIPLIER", "2.0"),
+        "RED_DAY_ATR_MULTIPLIER": env_vars.get("RED_DAY_ATR_MULTIPLIER", "0.75"),
+        "MIN_MULTIPLIER_FLOOR": env_vars.get("MIN_MULTIPLIER_FLOOR", "0.5")
+    })
+
+@app.route('/api/settings', methods=['POST'])
+def save_settings():
+    """Safely updates specific algorithm parameters and keys in the .env file."""
+    data = request.json
+    env_file = find_dotenv()
+    if not env_file:
+        env_file = '.env' # Fallback
+    
+    # We explicitly define allowed keys so the API can't arbitrarily rewrite files
+    allowed_keys = [
+        "COMPOSER_KEY_ID",
+        "COMPOSER_SECRET",
+        "ALPACA_KEY",
+        "ALPACA_SECRET",
+        "ACCOUNT_UUIDS",
+        "DISCORD_WEBHOOK_URL",
+        "TRIGGER_THRESHOLD_PCT", 
+        "ATR_LOOKBACK_DAYS", 
+        "BASE_ATR_MULTIPLIER", 
+        "RED_DAY_ATR_MULTIPLIER", 
+        "MIN_MULTIPLIER_FLOOR"
+    ]
+    
+    try:
+        for key in allowed_keys:
+            if key in data:
+                # set_key safely updates or adds the key without breaking other file contents
+                set_key(env_file, key, str(data[key]))
                 
-                tr = max(high - low, abs(high - prev_c), abs(low - prev_c))
-                true_ranges.append(tr)
-                closes.append(data['c'])
-                
-        if true_ranges and closes and closes[-1] > 0:
-            avg_tr = sum(true_ranges) / len(true_ranges)
-            current_close = closes[-1]
-            natr_pct = (avg_tr / current_close) * 100 
-            weighted_natr += (natr_pct * weight)
-            
-    return weighted_natr if weighted_natr > 0 else 1.5 
+        return jsonify({"status": "success", "message": "Variables updated successfully! Applied to next run."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-def run_monte_carlo(holdings, historical_data, spy_today_return):
-    """Runs standard Monte Carlo simulations to find probability of beating current returns."""
-    current_symphony_return = sum(
-        (h.get('last_percent_change', 0.0) * 100.0) * h.get('allocation', 0.0) 
-        for h in holdings if h.get('last_percent_change') is not None
-    )
-    
-    valid_dates = sorted(list(historical_data.keys())) 
-    
-    if len(valid_dates) < 20:
-        return 100.0 
-
-    distances = []
-    for date in valid_dates:
-        spy_hist = historical_data[date].get("SPY", {}).get("daily_ret", 0.0)
-        dist = abs(spy_hist - (spy_today_return / 100.0))
-        distances.append((dist, date))
-    
-    distances.sort(key=lambda x: x[0])
-    nearest_days = [d[1] for d in distances[:NEIGHBOR_K]]
-
-    weights = {h['ticker']: h.get('allocation', 0.0) for h in holdings}
-    
-    latest_valid_day = valid_dates[-1]
-    missing_tickers = [t for t in weights.keys() if t not in historical_data.get(latest_valid_day, {})]
-
-    sim_results = np.zeros(SIMULATION_PATHS)
-    
-    for i in range(SIMULATION_PATHS):
-        random_day = np.random.choice(nearest_days)
-        path_return = 0.0
-        
-        for ticker, weight in weights.items():
-            if ticker in missing_tickers:
-                daily_ret = historical_data[random_day].get("SPY", {}).get("daily_ret", 0.0)
-            else:
-                daily_ret = historical_data[random_day].get(ticker, {}).get("daily_ret", 0.0)
-                
-            path_return += (daily_ret * 100.0) * weight
-            
-        sim_results[i] = path_return
-
-    sim_results.sort()
-    below_count = np.searchsorted(sim_results, current_symphony_return)
-    prob_beating = ((SIMULATION_PATHS - below_count) / SIMULATION_PATHS) * 100.0
-    
-    return prob_beating
-
-# ==========================================
-# 5. MAIN EXECUTION LOOP
-# ==========================================
-
-def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Alpha Bot Waking Up...")
-    
-    if not COMPOSER_KEY_ID or not ALPACA_KEY:
-        print("CRITICAL: Missing API Keys. Please check your .env file.")
-        return
-
-    # 1. Load Local State
-    bot_state = load_state()
-    
-    # --- AUTOMATIC DAILY RESET ---
-    current_et = datetime.now(timezone.utc) - timedelta(hours=5)
-    current_date_str = current_et.strftime('%Y-%m-%d')
-    
-    if bot_state.get("date") != current_date_str:
-        print(f"  -> New trading day detected ({current_date_str} ET). Wiping old state memory.")
-        bot_state = {"date": current_date_str}
-        save_state(bot_state)
-    # -----------------------------
-
-    all_tickers = set()
-    symphony_data_cache = {} 
-    
-    # 2. Fetch Symphony data
-    for account in ACCOUNT_UUIDS:
-        symphonies = fetch_symphony_stats(account)
-        symphony_data_cache[account] = symphonies
-        
-        for sym in symphonies:
-            for holding in sym.get('holdings', []):
-                raw_ticker = holding.get('ticker', '')
-                clean_ticker = raw_ticker.split('::')[-1].split('//')[0]
-                alpaca_ticker = clean_ticker.replace('/', '.')
-                
-                if alpaca_ticker:
-                    all_tickers.add(alpaca_ticker)
-                    holding['working_ticker'] = alpaca_ticker
-                    
-    # 3. Fetch Historical Data 
-    historical_data = fetch_alpaca_history(list(all_tickers))
-    
-    if not historical_data:
-        print("CRITICAL: Failed to retrieve historical data from Alpaca. Aborting execution.")
-        return
-    
-    # 4. Determine Market Tone
-    latest_date = sorted(historical_data.keys())[-1]
-    latest_spy_data = historical_data[latest_date].get("SPY", {})
-    spy_today = latest_spy_data.get("daily_ret", 0.0) * 100 
-    
-    spy_open = latest_spy_data.get('o', 1)
-    spy_prev_c = latest_spy_data.get('prev_c', 1)
-    spy_gap_ret = ((spy_open - spy_prev_c) / spy_prev_c) * 100 if spy_prev_c > 0 else 0.0
-    
-    market_tone_red = spy_gap_ret < 0
-    
-    print(f"Market Conditioning Baseline (SPY on {latest_date}): {spy_today:.2f}%")
-    print(f"Market Open Tone: {'RED' if market_tone_red else 'GREEN'} (Gap: {spy_gap_ret:.2f}%)\n")
-
-    # 5. Evaluate Symphonies
-    for account, symphonies in symphony_data_cache.items():
-        print(f"Evaluating Account: {account}")
-        for sym in symphonies:
-            symphony_id = sym['id']
-            symphony_name = sym.get('name', 'Unknown Symphony')
-            holdings = sym.get('holdings', [])
-            current_return = sym.get('last_percent_change', 0.0) * 100
-            
-            for h in holdings:
-                h['ticker'] = h.get('working_ticker', h.get('ticker'))
-            
-            if symphony_id not in bot_state:
-                bot_state[symphony_id] = {"high_water_mark": current_return, "armed": False}
-
-            # Update High Water Mark
-            if current_return > bot_state[symphony_id]["high_water_mark"]:
-                bot_state[symphony_id]["high_water_mark"] = current_return
-
-            high_water_mark = bot_state[symphony_id]["high_water_mark"]
-            prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
-            print(f"  -> {symphony_name}: Live Return = {current_return:.2f}% | High Water Mark = {high_water_mark:.2f}% | Prob Beating = {prob_beating:.1f}%")
-
-            # --- NEW: Save rich data for the Dashboard ---
-            bot_state[symphony_id]["name"] = symphony_name
-            bot_state[symphony_id]["account"] = account
-            bot_state[symphony_id]["current_return"] = current_return
-            bot_state[symphony_id]["mc_prob"] = prob_beating
-            save_state(bot_state)
-            # ---------------------------------------------
-            
-            if prob_beating < TRIGGER_THRESHOLD_PCT and not bot_state[symphony_id]["armed"]:
-                bot_state[symphony_id]["armed"] = True
-                save_state(bot_state)
-                print(f"  *** WARNING: {symphony_name} ARMED. Monte Carlo Probability dropped below threshold. ***")
-                
-            # Execution Logic (Only if Armed)
-            if bot_state[symphony_id]["armed"]:
-                active_multiplier = RED_DAY_ATR_MULTIPLIER if market_tone_red else BASE_ATR_MULTIPLIER
-                portfolio_natr = calculate_portfolio_natr(holdings, historical_data, ATR_LOOKBACK_DAYS)
-                
-                # --- PROFIT PARACHUTE LOGIC ---
-                if high_water_mark > portfolio_natr and portfolio_natr > 0:
-                    outlier_ratio = high_water_mark / portfolio_natr
-                    active_multiplier = max(MIN_MULTIPLIER_FLOOR, active_multiplier / outlier_ratio)
-                # ------------------------------
-                
-                trailing_stop_distance = portfolio_natr * active_multiplier
-                drawdown_from_peak = high_water_mark - current_return
-                
-                print(f"  -> [ARMED] Stop Distance: {trailing_stop_distance:.2f}% | Current Drawdown: {drawdown_from_peak:.2f}%")
-                
-                if drawdown_from_peak >= trailing_stop_distance:
-                    print(f"  *** TRAILING STOP HIT FOR {symphony_name} ***")
-                    
-                    # EXECUTION TRIGGER - Uncomment the line below to go LIVE
-                    # success = execute_sell_to_cash(symphony_id, account)
-                    print("  -> [DRY RUN] Execution bypassed.")
-                    
-                    send_discord_alert(symphony_name, current_return, prob_beating, drawdown_from_peak, trailing_stop_distance)
-                    
-                    # Reset state after selling to prevent spam
-                    bot_state[symphony_id]["armed"] = False
-                    bot_state[symphony_id]["high_water_mark"] = -999.0
-                    save_state(bot_state)
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print("\n🚀 Starting Alpha Bot Control Center at http://localhost:5000\n")
+    app.run(port=5000, debug=False)
