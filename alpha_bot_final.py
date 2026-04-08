@@ -3,7 +3,7 @@ import time
 import json
 import requests
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # ==========================================
@@ -33,7 +33,7 @@ RED_DAY_ATR_MULTIPLIER = float(os.getenv("RED_DAY_ATR_MULTIPLIER", "0.75"))
 MIN_MULTIPLIER_FLOOR = float(os.getenv("MIN_MULTIPLIER_FLOOR", "0.5"))
 
 # ==========================================
-# 2. STATE MANAGEMENT
+# 2. STATE MANAGEMENT & LOGGING
 # ==========================================
 STATE_FILE = "bot_state.json"
 
@@ -266,7 +266,7 @@ def main():
     bot_state = load_state()
     
     # --- AUTOMATIC DAILY RESET ---
-    current_et = datetime.utcnow() - timedelta(hours=5)
+    current_et = datetime.now(timezone.utc) - timedelta(hours=5)
     current_date_str = current_et.strftime('%Y-%m-%d')
     
     if bot_state.get("date") != current_date_str:
@@ -329,14 +329,21 @@ def main():
             if symphony_id not in bot_state:
                 bot_state[symphony_id] = {"high_water_mark": current_return, "armed": False}
 
+            # Update High Water Mark
             if current_return > bot_state[symphony_id]["high_water_mark"]:
                 bot_state[symphony_id]["high_water_mark"] = current_return
-                save_state(bot_state)
 
             high_water_mark = bot_state[symphony_id]["high_water_mark"]
-            
             prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
             print(f"  -> {symphony_name}: Live Return = {current_return:.2f}% | High Water Mark = {high_water_mark:.2f}% | Prob Beating = {prob_beating:.1f}%")
+
+            # --- NEW: Save rich data for the Dashboard ---
+            bot_state[symphony_id]["name"] = symphony_name
+            bot_state[symphony_id]["account"] = account
+            bot_state[symphony_id]["current_return"] = current_return
+            bot_state[symphony_id]["mc_prob"] = prob_beating
+            save_state(bot_state)
+            # ---------------------------------------------
             
             if prob_beating < TRIGGER_THRESHOLD_PCT and not bot_state[symphony_id]["armed"]:
                 bot_state[symphony_id]["armed"] = True
@@ -349,11 +356,8 @@ def main():
                 portfolio_natr = calculate_portfolio_natr(holdings, historical_data, ATR_LOOKBACK_DAYS)
                 
                 # --- PROFIT PARACHUTE LOGIC ---
-                # If the current peak is higher than the portfolio's normal daily volatility
                 if high_water_mark > portfolio_natr and portfolio_natr > 0:
                     outlier_ratio = high_water_mark / portfolio_natr
-                    
-                    # Shrink the multiplier, but respect the floor
                     active_multiplier = max(MIN_MULTIPLIER_FLOOR, active_multiplier / outlier_ratio)
                 # ------------------------------
                 
