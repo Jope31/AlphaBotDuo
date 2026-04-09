@@ -279,13 +279,33 @@ def main():
                 bot_state[symphony_id]["high_water_mark"] = current_return
 
             high_water_mark = bot_state[symphony_id]["high_water_mark"]
+            
+            # --- MATH CALCS ---
             prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
-            print(f"  -> {symphony_name}: Live Return = {current_return:.2f}% | High Water Mark = {high_water_mark:.2f}% | Prob Beating = {prob_beating:.1f}%")
+            portfolio_natr = calculate_portfolio_natr(holdings, historical_data, ATR_LOOKBACK_DAYS)
+            
+            # Calculate dynamic stop parameters for UI
+            active_multiplier = RED_DAY_ATR_MULTIPLIER if market_tone_red else BASE_ATR_MULTIPLIER
+            if high_water_mark > portfolio_natr and portfolio_natr > 0:
+                outlier_ratio = high_water_mark / portfolio_natr
+                active_multiplier = max(MIN_MULTIPLIER_FLOOR, active_multiplier / outlier_ratio)
+            
+            trailing_stop_distance = portfolio_natr * active_multiplier
+            
+            # If high water mark is -999 (sold), fallback to current return for math consistency
+            safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
+            stop_trigger_level = safe_hwm - trailing_stop_distance
+            
+            print(f"  -> {symphony_name}: Live Return = {current_return:.2f}% | High Water Mark = {high_water_mark:.2f}% | Prob Beating = {prob_beating:.1f}% | NATR = {portfolio_natr:.2f}%")
 
+            # --- SAVE FULL STATE FOR UI ---
             bot_state[symphony_id]["name"] = symphony_name
             bot_state[symphony_id]["account"] = account
             bot_state[symphony_id]["current_return"] = current_return
             bot_state[symphony_id]["mc_prob"] = prob_beating
+            bot_state[symphony_id]["natr"] = portfolio_natr
+            bot_state[symphony_id]["stop_distance"] = trailing_stop_distance
+            bot_state[symphony_id]["stop_trigger"] = stop_trigger_level
             save_state(bot_state)
             
             if prob_beating < TRIGGER_THRESHOLD_PCT and not bot_state[symphony_id]["armed"]:
@@ -294,14 +314,6 @@ def main():
                 print(f"  *** WARNING: {symphony_name} ARMED. ***")
                 
             if bot_state[symphony_id]["armed"]:
-                active_multiplier = RED_DAY_ATR_MULTIPLIER if market_tone_red else BASE_ATR_MULTIPLIER
-                portfolio_natr = calculate_portfolio_natr(holdings, historical_data, ATR_LOOKBACK_DAYS)
-                
-                if high_water_mark > portfolio_natr and portfolio_natr > 0:
-                    outlier_ratio = high_water_mark / portfolio_natr
-                    active_multiplier = max(MIN_MULTIPLIER_FLOOR, active_multiplier / outlier_ratio)
-                
-                trailing_stop_distance = portfolio_natr * active_multiplier
                 drawdown_from_peak = high_water_mark - current_return
                 
                 if drawdown_from_peak >= trailing_stop_distance:
