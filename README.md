@@ -16,7 +16,7 @@ The system features a live web dashboard that allows you to monitor the state of
 
 Alpha\_Bot\_Project/  
 ├── .env&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; \# API Keys and Algorithm Parameters  
-├── alpha\_bot\_final.py&emsp;\# Core Bot Engine (Math, API Calls, Execution)  
+├── alpha\_bot\_execution.py&emsp;\# Core Bot Engine (Math, API Calls, Execution)  
 ├── app.py&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;\# Flask Web Server & Background Scheduler  
 ├── bot\_state.json&emsp;&emsp;&emsp;\# Local memory (High Water Marks, Armed status)  
 └── templates/  
@@ -65,7 +65,7 @@ Clicking the "Force Run Now" button on the dashboard immediately bypasses the ti
 
 ## **🛠️ How It Works (The Execution Loop)**
 
-1. **Scheduler:** ```app.py``` triggers alpha\_bot\_final.py every 5 minutes during market hours.  
+1. **Scheduler:** ```app.py``` triggers alpha\_bot\_execution.py every 5 minutes during market hours.  
 2. **Data Fetching:** Retrieves returns from Composer and historical price data from Alpaca.  
 3. **Evaluation:** Updates the local ```bot_state.json``` with the High Water Mark.  
 4. **Monte Carlo:** Calculates the probability of beating the current return by end-of-day. If below ```TRIGGER_THRESHOLD_PCT```, the symphony is marked "armed": true.  
