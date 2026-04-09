@@ -15,7 +15,8 @@ app = Flask(__name__)
 def trigger_alpha_bot(force=False):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Triggering Alpha Bot...")
     try:
-        cmd = ["python", "alpha_bot_final.py"]
+        # Updated to point to the new filename
+        cmd = ["python", "alpha_bot_execution.py"]
         if force:
             cmd.append("--force")
         subprocess.run(cmd, check=True)
@@ -46,7 +47,6 @@ def get_state():
         env_vars = dotenv_values('.env')
         live_mode = env_vars.get("LIVE_EXECUTION", "False").lower() in ("true", "1", "yes")
             
-        # Calculate seconds until next automated run
         next_run_seconds = 0
         jobs = schedule.get_jobs()
         if jobs and jobs[0].next_run:
@@ -65,7 +65,6 @@ def get_state():
 
 @app.route('/api/trigger', methods=['POST'])
 def manual_trigger():
-    # Pass force=True when triggered manually via the dashboard UI
     threading.Thread(target=trigger_alpha_bot, args=(True,)).start()
     return jsonify({"status": "success", "message": "Bot execution forced (bypassing gatekeeper)."})
 
@@ -106,7 +105,6 @@ def sell_account():
         return jsonify({"status": "error", "message": "Composer API keys missing in settings."}), 400
         
     threading.Thread(target=perform_account_liquidation, args=(account_id, key, secret, live_mode)).start()
-    
     mode_text = "LIVE EXECUTION" if live_mode else "DRY RUN"
     return jsonify({"status": "success", "message": f"[{mode_text}] Initiated account liquidation."})
 
@@ -123,10 +121,8 @@ def get_settings():
         "ACCOUNT_UUIDS": env_vars.get("ACCOUNT_UUIDS", ""),
         "DISCORD_WEBHOOK_URL": env_vars.get("DISCORD_WEBHOOK_URL", ""),
         "TRIGGER_THRESHOLD_PCT": env_vars.get("TRIGGER_THRESHOLD_PCT", "15.0"),
-        "ATR_LOOKBACK_DAYS": env_vars.get("ATR_LOOKBACK_DAYS", "14"),
-        "BASE_ATR_MULTIPLIER": env_vars.get("BASE_ATR_MULTIPLIER", "2.0"),
-        "RED_DAY_ATR_MULTIPLIER": env_vars.get("RED_DAY_ATR_MULTIPLIER", "0.75"),
-        "MIN_MULTIPLIER_FLOOR": env_vars.get("MIN_MULTIPLIER_FLOOR", "0.5")
+        "TRAILING_STOP_PCT": env_vars.get("TRAILING_STOP_PCT", "1.5"),
+        "BREAKEVEN_ACTIVATION_PCT": env_vars.get("BREAKEVEN_ACTIVATION_PCT", "2.0")
     })
 
 @app.route('/api/settings', methods=['POST'])
@@ -137,10 +133,9 @@ def save_settings():
         env_file = '.env'
     
     allowed_keys = [
-        "LIVE_EXECUTION",
-        "COMPOSER_KEY_ID", "COMPOSER_SECRET", "ALPACA_KEY", "ALPACA_SECRET",
+        "LIVE_EXECUTION", "COMPOSER_KEY_ID", "COMPOSER_SECRET", "ALPACA_KEY", "ALPACA_SECRET",
         "ACCOUNT_UUIDS", "DISCORD_WEBHOOK_URL", "TRIGGER_THRESHOLD_PCT", 
-        "ATR_LOOKBACK_DAYS", "BASE_ATR_MULTIPLIER", "RED_DAY_ATR_MULTIPLIER", "MIN_MULTIPLIER_FLOOR"
+        "TRAILING_STOP_PCT", "BREAKEVEN_ACTIVATION_PCT"
     ]
     
     try:
