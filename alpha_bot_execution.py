@@ -69,7 +69,8 @@ def fetch_symphony_stats(account_id):
     return []
 
 def execute_sell_to_cash(symphony_id, account_id):
-    url = f"https://api.composer.trade/api/v0.1/deploy/symphonies/{symphony_id}/sell-all"
+    # UPDATED: Correct Composer API endpoint for "Go to Cash"
+    url = f"https://api.composer.trade/api/v0.1/deploy/accounts/{account_id}/symphonies/{symphony_id}/go-to-cash"
     response = requests.post(url, headers=get_composer_headers())
     time.sleep(1.5)
     return response.status_code in [200, 201, 202]
@@ -262,9 +263,12 @@ def main():
                 h['ticker'] = h.get('working_ticker', h.get('ticker'))
             
             if symphony_id not in bot_state:
-                bot_state[symphony_id] = {"high_water_mark": current_return, "armed": False}
+                bot_state[symphony_id] = {"high_water_mark": current_return, "armed": False, "triggered": False}
 
-            if current_return > bot_state[symphony_id]["high_water_mark"]:
+            if "triggered" not in bot_state[symphony_id]:
+                bot_state[symphony_id]["triggered"] = False
+
+            if current_return > bot_state[symphony_id]["high_water_mark"] and not bot_state[symphony_id]["triggered"]:
                 bot_state[symphony_id]["high_water_mark"] = current_return
 
             high_water_mark = bot_state[symphony_id]["high_water_mark"]
@@ -280,6 +284,9 @@ def main():
                 stop_trigger_level = max(base_stop_level, 0.0)
             else:
                 stop_trigger_level = base_stop_level
+
+            if bot_state[symphony_id]["triggered"]:
+                stop_trigger_level = -999.0
 
             print(f"  -> {symphony_name[:35]}: Ret: {current_return:.2f}% | HWM: {high_water_mark:.2f}% | Stop: {stop_trigger_level:.2f}% | ArmProb: {prob_beating:.1f}%")
 
@@ -300,7 +307,7 @@ def main():
                 should_arm = True
                 arm_reason = "Negative Return"
 
-            if should_arm and not bot_state[symphony_id]["armed"]:
+            if should_arm and not bot_state[symphony_id]["armed"] and not bot_state[symphony_id]["triggered"]:
                 bot_state[symphony_id]["armed"] = True
                 save_state(bot_state)
                 print(f"  *** {symphony_name} ARMED ({arm_reason}) ***")
@@ -321,6 +328,7 @@ def main():
                     send_discord_alert(symphony_name, current_return, prob_beating, stop_trigger_level, LIVE_EXECUTION)
                     
                     bot_state[symphony_id]["armed"] = False
+                    bot_state[symphony_id]["triggered"] = True
                     bot_state[symphony_id]["high_water_mark"] = -999.0
                     save_state(bot_state)
 
