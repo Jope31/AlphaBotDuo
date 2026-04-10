@@ -269,7 +269,7 @@ def main():
 
             high_water_mark = bot_state[symphony_id]["high_water_mark"]
             
-            # --- 1. MC Arming Mechanism ---
+            # --- 1. MC Probability Engine ---
             prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
             
             # --- 2. Fixed Trailing Stop & Breakeven Lock Math ---
@@ -290,11 +290,20 @@ def main():
             bot_state[symphony_id]["stop_trigger"] = stop_trigger_level
             save_state(bot_state)
             
-            # --- 3. Arming ---
-            if prob_beating < TRIGGER_THRESHOLD_PCT and not bot_state[symphony_id]["armed"]:
+            # --- 3. Dual-Arming Mechanism ---
+            should_arm = False
+            arm_reason = ""
+            if prob_beating < TRIGGER_THRESHOLD_PCT:
+                should_arm = True
+                arm_reason = f"MC Prob {prob_beating:.1f}%"
+            elif current_return < 0.0:
+                should_arm = True
+                arm_reason = "Negative Return"
+
+            if should_arm and not bot_state[symphony_id]["armed"]:
                 bot_state[symphony_id]["armed"] = True
                 save_state(bot_state)
-                print(f"  *** {symphony_name} ARMED ***")
+                print(f"  *** {symphony_name} ARMED ({arm_reason}) ***")
                 
             # --- 4. Execution Check ---
             if bot_state[symphony_id]["armed"]:
