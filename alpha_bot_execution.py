@@ -1,4 +1,5 @@
 """Core execution logic for Alpha Bot."""
+
 import os
 import sys
 import time
@@ -27,12 +28,15 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # --- EXECUTION MODE ---
 LIVE_EXECUTION = os.getenv("LIVE_EXECUTION", "False").lower() in (
-    "true", "1", "yes"
+    "true",
+    "1",
+    "yes",
 )
 
 # --- STRATEGY PARAMETERS (APPROACH A) ---
 TRIGGER_THRESHOLD_PCT = float(os.getenv("TRIGGER_THRESHOLD_PCT", "15.0"))
 TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5"))
+ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))
 BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0"))
 
 SIMULATION_PATHS = 5000
@@ -81,9 +85,7 @@ def fetch_symphony_stats(account_id):
         f"https://api.composer.trade/api/v0.1/portfolio/accounts/"
         f"{account_id}/symphony-stats-meta"
     )
-    response = requests.get(
-        url, headers=get_composer_headers(), timeout=10
-    )
+    response = requests.get(url, headers=get_composer_headers(), timeout=10)
     time.sleep(1.5)
     if response.status_code == 200:
         return response.json().get("symphonies", [])
@@ -159,27 +161,27 @@ def send_discord_alert(
                     {
                         "name": "Symphony",
                         "value": symphony_name,
-                        "inline": True
+                        "inline": True,
                     },
                     {
                         "name": "Exit Return",
                         "value": f"{current_return:.2f}%",
-                        "inline": True
+                        "inline": True,
                     },
                     {
                         "name": "Stop Level",
                         "value": f"{stop_trigger_level:.2f}%",
-                        "inline": True
+                        "inline": True,
                     },
                     {
                         "name": "MC Probability",
                         "value": f"{prob_beating:.1f}%",
-                        "inline": True
+                        "inline": True,
                     },
                     {
                         "name": "Action Taken",
                         "value": action_text,
-                        "inline": False
+                        "inline": False,
                     },
                 ],
                 "footer": {"text": "Alpha Bot • Hybrid Trailing Stop"},
@@ -200,9 +202,10 @@ def fetch_alpaca_history(tickers, current_date_str):
         try:
             with open(HISTORY_CACHE_FILE, "r", encoding="utf-8") as f:
                 cache = json.load(f)
-            if cache.get("date") == current_date_str and cache.get(
-                "tickers"
-            ) == tickers_list:
+            if (
+                cache.get("date") == current_date_str
+                and cache.get("tickers") == tickers_list
+            ):
                 print("  -> Loading static 3-year history from local cache.")
                 return cache.get("data", {})
         except json.JSONDecodeError:
@@ -217,16 +220,18 @@ def fetch_alpaca_history(tickers, current_date_str):
     )
     headers = {
         "APCA-API-KEY-ID": ALPACA_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_SECRET
+        "APCA-API-SECRET-KEY": ALPACA_SECRET,
     }
     historical_data = {}
     batch_size = 30
 
     for i in range(0, len(tickers_list), batch_size):
-        batch = tickers_list[i:i + batch_size]
+        batch = tickers_list[i: i + batch_size]
         symbol_string = ",".join(batch)
-        print(f"  -> Downloading batch {i // batch_size + 1}: "
-              f"{len(batch)} tickers...")
+        print(
+            f"  -> Downloading batch {i // batch_size + 1}: "
+            f"{len(batch)} tickers..."
+        )
 
         page_token = None
         while True:
@@ -287,7 +292,7 @@ def get_live_spy_data():
     )
     headers = {
         "APCA-API-KEY-ID": ALPACA_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_SECRET
+        "APCA-API-SECRET-KEY": ALPACA_SECRET,
     }
     url = (
         f"https://data.alpaca.markets/v2/stocks/bars?"
@@ -332,7 +337,8 @@ def run_monte_carlo(holdings, historical_data, spy_today_return):
     weights = {h["ticker"]: h.get("allocation", 0.0) for h in holdings}
     latest_valid_day = valid_dates[-1]
     missing_tickers = [
-        t for t in weights.keys()
+        t
+        for t in weights.keys()
         if t not in historical_data.get(latest_valid_day, {})
     ]
 
@@ -382,7 +388,7 @@ def main():
     """Main execution entry point."""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Alpha Bot Waking Up...")
     mode_text = (
-        'LIVE EXECUTION (DANGER)' if LIVE_EXECUTION else 'DRY RUN (SAFE)'
+        "LIVE EXECUTION (DANGER)" if LIVE_EXECUTION else "DRY RUN (SAFE)"
     )
     print(f"MODE: {mode_text}")
 
@@ -395,8 +401,11 @@ def main():
     market_open = dt_time(9, 30)
     market_close = dt_time(16, 0)
 
-    if not is_weekday or current_time < market_open \
-            or current_time > market_close:
+    if (
+        not is_weekday
+        or current_time < market_open
+        or current_time > market_close
+    ):
         if not force_run:
             print(
                 f"  -> Market closed (ET: {current_et.strftime('%a %H:%M')}). "
@@ -483,13 +492,38 @@ def main():
                 holdings, historical_data, spy_today
             )
 
-            # --- 2. Fixed Trailing Stop & Breakeven Lock Math ---
+            # --- 2. Dynamic Trailing Stop & Breakeven Lock Math ---
             safe_hwm = (
                 high_water_mark
                 if high_water_mark != -999.0
                 else current_return
             )
-            base_stop_level = safe_hwm - TRAILING_STOP_PCT
+
+            # Calculate time ratio
+            current_time_obj = get_current_et().time()
+            current_minutes = (
+                current_time_obj.hour * 60 + current_time_obj.minute
+            )
+            market_open_minutes = 9 * 60 + 30
+            market_close_minutes = 16 * 60
+
+            # Bound the time ratio between 0.0 and 1.0
+            time_ratio = max(
+                0.0,
+                min(
+                    1.0,
+                    (current_minutes - market_open_minutes)
+                    / (market_close_minutes - market_open_minutes),
+                ),
+            )
+
+            # Logarithmic curve (Asymmetric Curve Decay)
+            decay_curve = time_ratio**2.0
+            dynamic_trailing_stop = TRAILING_STOP_PCT - (
+                (TRAILING_STOP_PCT - ENDING_STOP_PCT) * decay_curve
+            )
+
+            base_stop_level = safe_hwm - dynamic_trailing_stop
 
             if safe_hwm >= BREAKEVEN_ACTIVATION_PCT:
                 stop_trigger_level = max(base_stop_level, 0.0)
