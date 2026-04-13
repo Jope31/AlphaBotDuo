@@ -205,6 +205,13 @@
                             </div>
                             <div class="relative group">
                                 <div class="flex justify-between items-center mb-1">
+                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help">ENDING_STOP_PCT</label>
+                                    <span class="text-xs text-slate-500">Default: 0.5</span>
+                                </div>
+                                <input type="number" step="0.1" id="env-ending-stop" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            </div>
+                            <div class="relative group">
+                                <div class="flex justify-between items-center mb-1">
                                     <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help">BREAKEVEN_ACTIVATION_PCT</label>
                                     <span class="text-xs text-slate-500">Default: 2.0</span>
                                 </div>
@@ -578,6 +585,7 @@
 
                 document.getElementById('env-trigger').value = vars.TRIGGER_THRESHOLD_PCT;
                 document.getElementById('env-trailing-stop').value = vars.TRAILING_STOP_PCT;
+                document.getElementById('env-ending-stop').value = vars.ENDING_STOP_PCT;
                 document.getElementById('env-breakeven').value = vars.BREAKEVEN_ACTIVATION_PCT;
 
                 document.getElementById('env-comp-key').value = vars.COMPOSER_KEY_ID;
@@ -628,6 +636,7 @@
                 DISCORD_WEBHOOK_URL: document.getElementById('env-discord').value.trim(),
                 TRIGGER_THRESHOLD_PCT: document.getElementById('env-trigger').value,
                 TRAILING_STOP_PCT: document.getElementById('env-trailing-stop').value,
+                ENDING_STOP_PCT: document.getElementById('env-ending-stop').value,
                 BREAKEVEN_ACTIVATION_PCT: document.getElementById('env-breakeven').value
             };
 
