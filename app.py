@@ -1,5 +1,4 @@
 """Flask application for the Alpha Bot Control Center."""
-
 import os
 import json
 import time
@@ -31,25 +30,16 @@ def trigger_alpha_bot(force=False):
 def run_scheduler():
     """Runs the scheduler with a 5-second offset from market open."""
     # 1. Schedule the first run for 5 seconds after market open (9:30:05 AM)
-    schedule.every().day.at("09:30:05", "America/New_York").do(
-        trigger_alpha_bot, force=False
-    )
-
-    # 2. Schedule the recurring 5-minute intervals starting at 09:35:00 AM
-    # This ensures a clean sequence: 9:30:05, 9:35:00, 9:40:00, etc.
-    def setup_recurring_job():
-        # Execute immediately for the 09:35:00 slot before scheduling the rest
-        trigger_alpha_bot(force=False)
-
-        # Clear existing jobs with the tag "recurring_job" to avoid compounding
-        schedule.clear("recurring_job")
-        schedule.every(5).minutes.do(trigger_alpha_bot, force=False).tag(
-            "recurring_job"
-        )
-
-    schedule.every().day.at("09:35:00", "America/New_York").do(
-        setup_recurring_job
-    )
+    schedule.every().day.at("09:30:05", "America/New_York").do(trigger_alpha_bot, force=False)
+    
+    # 2. Schedule recurring runs at exact 5-minute marks every hour
+    # This guarantees the bot picks up immediately even if started mid-day.
+    minute_marks = [
+        "00:00", "05:00", "10:00", "15:00", "20:00", "25:00", 
+        "30:00", "35:00", "40:00", "45:00", "50:00", "55:00"
+    ]
+    for mark in minute_marks:
+        schedule.every().hour.at(mark).do(trigger_alpha_bot, force=False)
 
     while True:
         schedule.run_pending()
@@ -71,7 +61,7 @@ def get_state():
             return jsonify(
                 {
                     "status": "waiting",
-                    "message": "bot_state.json not created yet.",
+                    "message": "bot_state.json not created yet."
                 }
             )
 
@@ -87,8 +77,10 @@ def get_state():
 
         next_run_seconds = 0
         jobs = schedule.get_jobs()
-        if jobs and jobs[0].next_run:
-            delta = jobs[0].next_run - datetime.now()
+        valid_jobs = [job for job in jobs if job.next_run]
+        if valid_jobs:
+            next_run_time = min(job.next_run for job in valid_jobs)
+            delta = next_run_time - datetime.now()
             next_run_seconds = max(0, int(delta.total_seconds()))
 
         return jsonify(
@@ -111,7 +103,7 @@ def manual_trigger():
     return jsonify(
         {
             "status": "success",
-            "message": "Bot execution forced (bypassing gatekeeper).",
+            "message": "Bot execution forced (bypassing gatekeeper)."
         }
     )
 
@@ -174,18 +166,15 @@ def sell_account():
     data = request.json
     account_id = data.get("account_id")
     if not account_id:
-        return (
-            jsonify({"status": "error", "message": "No account ID provided"}),
-            400,
-        )
+        return jsonify(
+            {"status": "error", "message": "No account ID provided"}
+        ), 400
 
     env_vars = dotenv_values(".env")
     key = env_vars.get("COMPOSER_KEY_ID")
     secret = env_vars.get("COMPOSER_SECRET")
     live_mode = env_vars.get("LIVE_EXECUTION", "False").lower() in (
-        "true",
-        "1",
-        "yes",
+        "true", "1", "yes"
     )
 
     if not key or not secret:
@@ -193,7 +182,7 @@ def sell_account():
             jsonify(
                 {
                     "status": "error",
-                    "message": "Composer API keys missing in settings.",
+                    "message": "Composer API keys missing in settings."
                 }
             ),
             400,
