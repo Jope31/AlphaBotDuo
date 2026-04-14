@@ -396,9 +396,9 @@ def main():
     current_time = current_et.time()
     market_open = dt_time(9, 30)
     market_close = dt_time(16, 0)
+    rebalance_blackout = dt_time(15, 54) # Start blocking just before 3:55 PM ET
 
-    if not is_weekday or current_time < market_open \
-            or current_time > market_close:
+    if not is_weekday or current_time < market_open or current_time > market_close:
         if not force_run:
             print(
                 f"  -> Market closed (ET: {current_et.strftime('%a %H:%M')}). "
@@ -408,6 +408,19 @@ def main():
         print(
             "  -> Market closed, but --force flag detected! "
             "Bypassing gatekeeper..."
+        )
+
+    # --- COMPOSER REBALANCE BLACKOUT ---
+    if rebalance_blackout <= current_time <= market_close:
+        if not force_run:
+            print(
+                f"  -> 🛑 COMPOSER REBALANCE BLACKOUT (ET: {current_et.strftime('%H:%M')}). "
+                "Pausing to prevent false triggers during Composer's end-of-day rebalance..."
+            )
+            return
+        print(
+            "  -> Rebalance blackout active, but --force flag detected! "
+            "Bypassing..."
         )
     # --- END GATEKEEPER ---
 
