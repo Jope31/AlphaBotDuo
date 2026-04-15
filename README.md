@@ -1,86 +1,82 @@
-# **Alpha Bot Control Center**
+# **🤖 AlphaBot: Intelligent Composer API Guardian**
 
-Alpha Bot is an advanced, automated trading and risk management system built for Composer.trade. It uses a **Hybrid MC-Armed Dynamic Trailing Stop** to protect profits, cut losses, and enforce risk-free trades without overcomplicating execution logic.
+AlphaBot is an automated, risk-management sidecar application designed to monitor your Composer.trade accounts. It utilizes historical Alpaca market data, a local Monte Carlo simulation engine, and per-symphony volatility metrics to execute dynamic "sell-to-cash" API calls when a symphony begins to break down.
 
-The system features a live web dashboard that allows you to monitor the state of your portfolio across multiple accounts, dynamically adjust your API credentials and algorithmic risk parameters on the fly, and manually liquidate entire accounts in emergencies.
+It acts as an intelligent safety net, protecting your profits and cutting your losses before Composer's end-of-day rebalance window.
 
-## **🌟 Key Features**
+## **✨ Key Features**
 
-* **Live Web Dashboard:** Monitor all symphonies across your Composer accounts (Individual, Roth IRA, Trad. IRA) in real-time, complete with a live New York clock and countdown timer to the bot's next execution.  
-* **Live Execution & Dry Run Modes:** Safely test your parameters in "Dry Run" mode, which simulates trades and triggers without executing real API calls. Toggle "Live Execution" on the fly when you're ready for the bot to place real sell-to-cash orders.
-* **Dual-Arming Mechanism:** The trailing stop activates if the Monte Carlo probability of a positive return drops below your threshold, OR automatically if the symphony dips into the red (below 0.00%) to instantly cap bleeding.  
-* **Dynamic Time-Decay Trailing Stop:** Once armed, the bot follows the symphony's peak. The trailing stop tightens dynamically as the market close approaches using a logarithmic squeeze, locking in more profits towards the end of the day.
-* **Breakeven Lock:** The moment your symphony achieves a specific "Activation %" run, the bot violently yanks the stop level up to 0.00%, mathematically forbidding the trade from closing in the red.  
-* **Account-Wide Liquidation (Panic Button):** A built-in "Go to Cash" button for every account that securely loops through the Composer API and liquidates all symphonies into cash instantly.  
-* **Context-Aware Discord Alerts:** Discord notifications dynamically adapt based on the execution context (e.g., 🟢 "Profit Locked", 🔵 "Breakeven Locked", or 🔴 "Bleed Stopped").  
-* **Smart API Caching:** The bot downloads heavy 3-year historical Alpaca data only *once* per day. Every 5 minutes, it only fetches live intraday SPY data, drastically reducing API load and execution time.  
-* **Post-Market Simulator:** Re-run the day's data with different trailing stops, breakeven locks, and even a time-of-day scrubber to see exactly what would have triggered under different parameters, allowing for perfect algorithmic tuning.
+* **Volatility-Adjusted Stops:** Stop-loss distances are uniquely calibrated to each individual symphony based on its weighted 20-day historical standard deviation. High-volatility symphonies get more breathing room; low-volatility symphonies get tighter leashes.  
+* **Monte Carlo Probability Engine:** Runs 5,000 simulations against historical data (using K-Nearest Neighbors based on the current day's SPY return) to determine the statistical probability that a symphony will close higher than its current intraday return.  
+* **Time-Decay "Squeeze" Logic:** The dynamic trailing stop logarithmically tightens as the trading day progresses, locking in profits tighter as we approach the closing bell.  
+* **Hysteresis Disarming:** If a symphony recovers from a morning dip (probability doubles and returns go positive), the bot will stand down and disarm, preventing premature sell-offs on healthy pullbacks.  
+* **Morning Grace Period:** Ignores the extreme volatility and price-discovery of the first 20 minutes of the market open (starts evaluating at 9:50 AM ET).  
+* **Local Web Dashboard & Sandbox:** Features a beautifully designed local control center (```localhost:5000```) with a real-time ledger, live variable tuning, and a **Post-Market Simulator** to backtest your settings.  
+* **Discord Integration:** Sends rich webhooks detailing executed trades, exit returns, probabilities, and triggers.
 
-## **📂 Project Structure**
+## **🧠 How the Logic Works (The Pipeline)**
 
-Alpha\_Bot\_Project/  
-├── .env&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; \# API Keys and Algorithm Parameters  
-├── alpha\_bot\_execution.py&emsp;\# Core Bot Engine (Math, API Calls, Execution)  
-├── app.py&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;\# Flask Web Server & Background Scheduler  
-├── bot\_state.json&emsp;&emsp;&emsp;&emsp;&emsp;\# Local memory (High Water Marks, Armed status)  
-└── templates/  
-&emsp;&emsp;└── index.html&emsp;&emsp;&emsp;&emsp;&emsp;\# Web Dashboard UI<br>
-└── static/<br>
-&emsp;&emsp;└── favicon.png
+AlphaBot evaluates every symphony in your Composer account on a 5-minute loop between 9:50 AM ET and 4:00 PM ET (excluding the 3:54 PM \- 4:00 PM rebalance blackout window).
 
-## **🚀 Installation & Setup**
+1. **High-Water Mark (HWM) Tracking:** It records the highest intraday return a symphony achieves.  
+2. **Arming Condition:** The bot "Arms" a symphony (putting it on high alert) if:  
+   * The Monte Carlo probability of finishing strong drops below your ```TRIGGER_THRESHOLD_PCT``` (e.g., 15%).  
+   * *OR* the symphony experiences a sustained negative return (drops below ```-0.50%```).  
+3. **Volatility Calibration:** It calculates a dynamic trailing stop distance based on ```volatility * BASE_ATR_MULTIPLIER```.  
+4. **Execution Check:** If an armed symphony's current return drops below the HWM minus the dynamic trailing stop distance, the bot triggers a Composer API command to liquidate that specific symphony to cash immediately.  
+5. **Breakeven Lock:** If a symphony achieves a high enough return (e.g., ```> 2.0%```), the dynamic stop is hard-floored at ```0.0%```, ensuring a winning trade cannot turn into a losing trade.
 
-1. **Install Python Dependencies:**  
-   Ensure you have Python installed, then open your terminal and run:  
-   ```pip install flask schedule python-dotenv requests numpy tzdata```
+## **⚙️ Environment Variables (```.env```)**
 
-2. **Initial Configuration:**  
-   Create an empty ```.env``` file in your root folder (or use your existing one). You can input all your keys directly through the web dashboard once it's running.  
+Configure the bot by creating a ```.env``` file in the root directory. You can also edit these live via the Web Dashboard.
 
-3. **Run the Control Center:**  
-   Start the master application:  
-   ```python app.py```
+### **Core Credentials**
 
-4. **Access the Dashboard:**  
-   Open your browser and navigate to ```http://localhost:5000```. Click **Edit Variables** to configure your accounts, keys, and risk settings.
+* ```LIVE_EXECUTION```: Set to True to allow actual API calls. False will only simulate and log triggers.  
+* ```COMPOSER_KEY_ID```: Your Composer API Key.  
+* ```COMPOSER_SECRET```: Your Composer API Secret.  
+* ```ACCOUNT_UUIDS```: Comma-separated list of Composer Account UUIDs to monitor.  
+* ```ALPACA_KEY```: Alpaca Market Data API Key.  
+* ```ALPACA_SECRET```: Alpaca Market Data API Secret.  
+* ```DISCORD_WEBHOOK_URL```: (Optional) Discord webhook for alert notifications.
 
-## **🔌 UI & Connection Status**
+### **Strategy Parameters**
 
-At the top right of your dashboard, you will see a live connection indicator next to the "Force Run Now" button:
+* ```TRIGGER_THRESHOLD_PCT```: (Default ```15.0```) The Monte Carlo probability threshold that "arms" the bot.  
+* ```BASE_ATR_MULTIPLIER```: (Default ```2.0```) The multiplier applied to a symphony's 20-day volatility to calculate the morning trailing stop distance.  
+* ```MIN_MULTIPLIER_FLOOR```: (Default ```0.5```) The absolute minimum percentage distance allowed for a stop, regardless of how low volatility gets.  
+* ```BREAKEVEN_ACTIVATION_PCT```: (Default ```2.0```) Once a symphony hits this intraday return, the trailing stop will never be allowed to drop below 0.0% (guaranteeing a breakeven exit).  
+* *(Legacy)* ```TRAILING_STOP_PCT``` & ```ENDING_STOP_PCT```: Fallback flat percentages used only if Alpaca historical data fails to download.
 
-* **🟢 System Online (Green Pulse):** Your web browser is successfully communicating with your local Python backend (app.py). Your dashboard is actively receiving live data updates every 5 seconds.  
-* **🔴 Disconnected (Red Solid):** Your browser has lost connection to the backend. This almost always means the terminal window running app.py was closed, stopped, or crashed. The dashboard is now frozen. To fix this, simply restart python app.py in your terminal.  
-* **Average Return Indicator:** Every account section calculates the live average return of all its symphonies to help you decide when to manually take profits.
+## **🚀 Installation & Usage**
 
-## **⏱️ Scheduling & Manual Triggers**
+1. **Clone the repository:**  
+```
+git clone [https://github.com/yourusername/AlphaBot.git\](https://github.com/yourusername/AlphaBot.git)  
+cd AlphaBot
+```
 
-**Automated 24/7 Execution**
+2. **Install requirements:**  
+```
+pip install -r requirements.txt
+```
 
-Once you start ```app.py```, it automatically runs **every 5 minutes**. It includes a **Market Hours Gatekeeper** that puts the bot to sleep at night and on weekends (outside 9:30 AM \- 4:00 PM ET) to save API calls.
+   *(Requires: ```flask```, ```requests```, ```numpy```, ```python-dotenv```, ```schedule```)*  
+4. **Set up your ```.env``` file:**  
+   Use the provided ```.env``` as a template and fill in your API keys.  
+5. **Run the Control Center:**  
+```
+python app.py
+```
 
-**"Force Run Now" Mechanism**
+   This will boot the background scheduler and the Flask web server.  
+6. **Access the Dashboard:**  
+   Open your web browser and go to ```http://localhost:5000```.
 
-Clicking the "Force Run Now" button on the dashboard immediately bypasses the countdown timer *and* the Gatekeeper. It executes a live run instantly without interrupting the primary background schedule.
+## **🛑 Important Disclaimer**
 
-## **🎛️ Strategy Variables**
+**Use at your own risk.** AlphaBot interacts directly with your live brokerage/Composer accounts when ```LIVE_EXECUTION=True```.
 
-| Variable | Default | Description & Tuning |
-| :---- | :---- | :---- |
-| ```LIVE_EXECUTION``` | False | **Safety Switch.** If set to `False`, the bot runs in **Dry Run Mode**, updating the UI and sending Discord alerts without executing real API calls. Set to `True` for actual trading. |
-| ```TRIGGER_THRESHOLD_PCT``` | 15.0 | **The "Arming" switch.** The % of Monte Carlo paths needed to beat the current return. *Lower (5.0)* \= Aggressive/Patient. *Higher (25.0)* \= Conservative/Nervous. |
-| ```TRAILING_STOP_PCT``` | 1.5 | **Morning Leash.** Once the symphony is armed, the bot will trail the High Water Mark by this percentage at market open (9:30 AM). |
-| ```ENDING_STOP_PCT``` | 0.5 | **Afternoon Squeeze.** The trailing stop dynamically tightens towards this percentage as market close approaches (4:00 PM), protecting intraday gains. |
-| ```BREAKEVEN_ACTIVATION_PCT``` | 2.0 | **The Lock.** When the High Water Mark hits this exact percentage, the bot forces the Stop Level to 0.00%, guaranteeing a risk-free trade. |
-
-## **🛠️ How It Works (The Execution Loop)**
-
-1. **Scheduler:** ```app.py``` triggers ```alpha_bot_execution.py``` every 5 minutes during market hours.  
-2. **Data Fetching:** Retrieves live returns from Composer. Loads 3-year historical prices from the local cache, and makes one tiny Alpaca API call to get live SPY data.  
-3. **Evaluation:** Updates the local bot_state.json with the High Water Mark.  
-4. **Arming Check:** Calculates the probability of beating the current return by end-of-day. If below ```TRIGGER_THRESHOLD_PCT``` OR if the return is negative, the symphony is marked ```ARMED:true```.  
-5. **Execution:** If Armed, the bot calculates the Stop Level (HWM \- Trailing Stop). It applies the Breakeven lock if necessary. If the Current Return drops below this Stop Level, it executes an OpenAPI go-to-cash command via Composer.  
-6. **Triggered Lock:** Once a symphony is sold to cash, it is marked as ```TRIGGERED```. It halts all API execution checks and freezes its UI state until the memory wipes on the next trading day.
-
-## **⚠️ Disclaimer**
-
-**This software is for educational and experimental purposes only.** Algorithmic trading carries significant risk. The developers of AlphaBot are not responsible for any financial losses incurred. Always run the bot in DRY RUN (```LIVE_EXECUTION=False```) for several days to verify behavior before granting live execution privileges to your portfolio.
+* Always test your parameters in ```LIVE_EXECUTION=False``` (Dry Run Mode) first.  
+* Use the built-in Post-Market Simulator to understand how your ATR and threshold variables affect different symphonies.  
+* The author is not responsible for financial losses, missed executions due to API rate limits, or unexpected bot behavior.
