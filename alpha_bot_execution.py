@@ -33,9 +33,13 @@ LIVE_EXECUTION = os.getenv("LIVE_EXECUTION", "False").lower() in (
 
 # --- STRATEGY PARAMETERS ---
 TRIGGER_THRESHOLD_PCT = float(os.getenv("TRIGGER_THRESHOLD_PCT", "15.0"))
-TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5")) # Starting Stop
-ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))     # End of Day Stop
+TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5")) # Fallback Start Stop
+ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))     # Fallback End Stop
 BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0"))
+
+# --- VOLATILITY PARAMETERS ---
+BASE_ATR_MULTIPLIER = float(os.getenv("BASE_ATR_MULTIPLIER", "2.0"))
+MIN_MULTIPLIER_FLOOR = float(os.getenv("MIN_MULTIPLIER_FLOOR", "0.5"))
 
 SIMULATION_PATHS = 5000
 NEIGHBOR_K = 150
@@ -311,7 +315,7 @@ def get_live_spy_data():
 
 
 # ==========================================
-# 4. MATH ENGINE: MONTE CARLO ONLY
+# 4. MATH ENGINE: MONTE CARLO & VOLATILITY
 # ==========================================
 def run_monte_carlo(holdings, historical_data, spy_today_return):
     """Runs monte carlo simulation based on historical data."""
@@ -363,6 +367,32 @@ def run_monte_carlo(holdings, historical_data, spy_today_return):
     return ((SIMULATION_PATHS - below_count) / SIMULATION_PATHS) * 100.0
 
 
+def calculate_20d_vol(holdings, historical_data):
+    """Calculates the weighted 20-day standard deviation of a symphony's holdings."""
+    valid_dates = sorted(list(historical_data.keys()))[-20:]
+    if len(valid_dates) < 20:
+        return 0.0 
+
+    daily_returns = []
+    for date in valid_dates:
+        day_return = 0.0
+        for h in holdings:
+            ticker = h.get("ticker")
+            weight = h.get("allocation", 0.0)
+            if ticker in historical_data[date]:
+                day_return += (historical_data[date][ticker].get("daily_ret", 0.0) * 100.0) * weight
+            else:
+                # Fallback to SPY if specific ticker is missing on that historical day
+                spy_ret = historical_data[date].get("SPY", {}).get("daily_ret", 0.0)
+                day_return += (spy_ret * 100.0) * weight
+        daily_returns.append(day_return)
+    
+    if not daily_returns:
+        return 0.0
+    
+    return float(np.std(daily_returns))
+
+
 # ==========================================
 # 5. MAIN EXECUTION LOOP
 # ==========================================
@@ -374,7 +404,7 @@ def get_current_et():
         from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("America/New_York"))
     except Exception:
-        # Fallback if tzdata is missing (Common on Windows without tzdata package)
+        # Fallback if tzdata is missing
         if 3 <= utc_now.month <= 11:
             return utc_now - timedelta(hours=4)  # EDT approx
         return utc_now - timedelta(hours=5)  # EST approx
@@ -394,14 +424,14 @@ def main():
 
     is_weekday = current_et.weekday() < 5
     current_time = current_et.time()
-    market_open = dt_time(9, 30)
+    market_open = dt_time(9, 50) # Updated: 20-minute Grace Period
     market_close = dt_time(16, 0)
     rebalance_blackout = dt_time(15, 54) # Start blocking just before 3:55 PM ET
 
     if not is_weekday or current_time < market_open or current_time > market_close:
         if not force_run:
             print(
-                f"  -> Market closed (ET: {current_et.strftime('%a %H:%M')}). "
+                f"  -> Market closed or in Grace Period (ET: {current_et.strftime('%a %H:%M')}). "
                 "Sleeping to conserve API limits..."
             )
             return
@@ -439,27 +469,17 @@ def main():
         bot_state = {"date": current_date_str}
         save_state(bot_state)
 
-    # --- LOGARITHMIC TIME DECAY CALCULATION ---
+    # --- LOGARITHMIC TIME DECAY RATIO CALCULATION ---
     # Calculates how far into the trading day we are (0.0 to 1.0)
-    m_open_dt = current_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    m_open_dt = current_et.replace(hour=9, minute=50, second=0, microsecond=0)
     m_close_dt = current_et.replace(hour=16, minute=0, second=0, microsecond=0)
     
     total_trading_minutes = (m_close_dt - m_open_dt).total_seconds() / 60.0
     elapsed_minutes = (current_et - m_open_dt).total_seconds() / 60.0
     
-    # Cap bounds between 0 (market open) and 1 (market close)
     time_ratio = max(0.0, min(1.0, elapsed_minutes / total_trading_minutes))
-    
-    # math.log10(1 + 9 * time_ratio) creates a concave curve:
-    # 9:30 AM (0.0) -> 0.0 multiplier
-    # 12:45 PM (0.5) -> ~0.74 multiplier (Tightens quickly in morning)
-    # 4:00 PM (1.0) -> 1.0 multiplier
     decay_curve = math.log10(1 + 9 * time_ratio)
-    
-    dynamic_trailing_stop = TRAILING_STOP_PCT - ((TRAILING_STOP_PCT - ENDING_STOP_PCT) * decay_curve)
-
-    print(f"  -> Dynamic Stop Squeeze Active: Currently trailing at {dynamic_trailing_stop:.2f}%")
-    # --- END LOGARITHMIC DECAY ---
+    # --- END TIME RATIO ---
 
     all_tickers = set()
     symphony_data_cache = {}
@@ -515,10 +535,23 @@ def main():
 
             high_water_mark = bot_state[symphony_id]["high_water_mark"]
 
-            # --- 1. MC Probability Engine ---
+            # --- 1. MC Probability & Volatility Engine ---
             prob_beating = run_monte_carlo(
                 holdings, historical_data, spy_today
             )
+            symphony_vol = calculate_20d_vol(holdings, historical_data)
+
+            # Calculate Vol-Adjusted Dynamic Stop
+            if symphony_vol > 0:
+                morning_stop = max(symphony_vol * BASE_ATR_MULTIPLIER, MIN_MULTIPLIER_FLOOR)
+                # Afternoon stop tighten by 33% of base
+                afternoon_stop = max(symphony_vol * (BASE_ATR_MULTIPLIER * 0.33), MIN_MULTIPLIER_FLOOR * 0.5)
+            else:
+                # Fallback to UI static variables if history missing
+                morning_stop = TRAILING_STOP_PCT
+                afternoon_stop = ENDING_STOP_PCT
+
+            dynamic_trailing_stop = morning_stop - ((morning_stop - afternoon_stop) * decay_curve)
 
             # --- 2. Dynamic Trailing Stop & Breakeven Lock Math ---
             safe_hwm = (
@@ -527,7 +560,6 @@ def main():
                 else current_return
             )
             
-            # Apply our newly calculated dynamic stop distance
             base_stop_level = safe_hwm - dynamic_trailing_stop
 
             if safe_hwm >= BREAKEVEN_ACTIVATION_PCT:
@@ -541,7 +573,7 @@ def main():
             print(
                 f"  -> {symphony_name[:35]}: Ret: {current_return:.2f}% | "
                 f"HWM: {high_water_mark:.2f}% | "
-                f"Stop: {stop_trigger_level:.2f}% | "
+                f"Stop Dist: {dynamic_trailing_stop:.2f}% | "
                 f"ArmProb: {prob_beating:.1f}%"
             )
 
@@ -553,15 +585,17 @@ def main():
             bot_state[symphony_id]["active_stop_distance"] = dynamic_trailing_stop
             save_state(bot_state)
 
-            # --- 3. Dual-Arming Mechanism ---
+            # --- 3. Arming & Disarming Mechanism ---
             should_arm = False
             arm_reason = ""
+            
+            # Substantial change: Using -0.50% instead of 0.0% to filter noise
             if prob_beating < TRIGGER_THRESHOLD_PCT:
                 should_arm = True
                 arm_reason = f"MC Prob {prob_beating:.1f}%"
-            elif current_return < 0.0:
+            elif current_return < -0.50: 
                 should_arm = True
-                arm_reason = "Negative Return"
+                arm_reason = "Sustained Negative Return (<-0.50%)"
 
             if (
                 should_arm
@@ -571,6 +605,13 @@ def main():
                 bot_state[symphony_id]["armed"] = True
                 save_state(bot_state)
                 print(f"  *** {symphony_name} ARMED ({arm_reason}) ***")
+            
+            # HYSTERESIS: Disarm if conditions significantly recover
+            elif bot_state[symphony_id]["armed"] and not bot_state[symphony_id]["triggered"]:
+                if prob_beating > (TRIGGER_THRESHOLD_PCT * 2) and current_return > 0.0:
+                    bot_state[symphony_id]["armed"] = False
+                    save_state(bot_state)
+                    print(f"  *** {symphony_name} DISARMED (Conditions Recovered) ***")
 
             # --- 4. Execution Check ---
             if bot_state[symphony_id]["armed"]:
@@ -585,27 +626,38 @@ def main():
                         success = execute_sell_to_cash(
                             actual_symphony_id, account
                         )
-                        if not success:
-                            print(
-                                "     !!! ERROR: Composer API execution "
-                                "failed !!!"
+                        
+                        # Fix: Only update HWM/Trigger status if the API call actually succeeded
+                        if success:
+                            bot_state[symphony_id]["armed"] = False
+                            bot_state[symphony_id]["triggered"] = True
+                            bot_state[symphony_id]["high_water_mark"] = -999.0
+                            save_state(bot_state)
+                            
+                            send_discord_alert(
+                                symphony_name,
+                                current_return,
+                                prob_beating,
+                                stop_trigger_level,
+                                LIVE_EXECUTION,
                             )
+                        else:
+                            print("     !!! EXECUTION FAILED. Keeping state active to retry next loop !!!")
                     else:
                         print("  -> [DRY RUN] Execution bypassed.")
+                        # Dry runs always 'succeed' internally
+                        bot_state[symphony_id]["armed"] = False
+                        bot_state[symphony_id]["triggered"] = True
+                        bot_state[symphony_id]["high_water_mark"] = -999.0
+                        save_state(bot_state)
 
-                    send_discord_alert(
-                        symphony_name,
-                        current_return,
-                        prob_beating,
-                        stop_trigger_level,
-                        LIVE_EXECUTION,
-                    )
-
-                    bot_state[symphony_id]["armed"] = False
-                    bot_state[symphony_id]["triggered"] = True
-                    bot_state[symphony_id]["high_water_mark"] = -999.0
-                    save_state(bot_state)
-
+                        send_discord_alert(
+                            symphony_name,
+                            current_return,
+                            prob_beating,
+                            stop_trigger_level,
+                            LIVE_EXECUTION,
+                        )
 
 if __name__ == "__main__":
     main()
