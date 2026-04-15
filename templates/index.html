@@ -498,24 +498,53 @@
 
                         const name = sym.name || sym.id;
                         const mcProb = sym.mc_prob !== undefined ? `${sym.mc_prob.toFixed(1)}%` : '---';
-                        const curRet = sym.current_return !== undefined ? `${sym.current_return.toFixed(2)}%` : '---';
-                        
-                        // If triggered, wipe the stop level and HWM from UI view to prevent weird negative numbers
-                        const hwm = sym.high_water_mark !== undefined && sym.high_water_mark !== -999.0 ? `${sym.high_water_mark.toFixed(2)}%` : '---';
-                        const stopLevel = sym.stop_trigger !== undefined && sym.stop_trigger !== -999.0 ? `${sym.stop_trigger.toFixed(2)}%` : '---';
-                        
                         const mcColor = sym.mc_prob < 15.0 ? 'text-amber-400 font-medium' : 'text-slate-400';
-                        const curRetColor = sym.current_return >= 0 ? 'text-emerald-400' : 'text-rose-400';
-                        const hwmColor = sym.high_water_mark > 0 ? 'text-emerald-400' : 'text-slate-300';
+
+                        let curRetStr = '---';
+                        let hwmStr = '---';
+                        let stopLevelStr = '---';
+                        let curRetColor = 'text-slate-400';
+                        let hwmColor = 'text-slate-400';
+
+                        // Check if it's triggered. If so, display the frozen variables instead of the live ones.
+                        if (isTriggered) {
+                            // Safely retrieve the frozen values. (Fallback to live if triggered on an older bot version)
+                            const fRet = sym.triggered_at_return !== undefined ? sym.triggered_at_return : (sym.current_return || 0);
+                            
+                            // Prevent displaying legacy -999 HWMs
+                            const fallbackHWM = sym.high_water_mark === -999.0 ? undefined : sym.high_water_mark;
+                            const fHwm = sym.triggered_at_hwm !== undefined ? sym.triggered_at_hwm : fallbackHWM;
+                            
+                            const fStop = sym.triggered_at_stop !== undefined ? sym.triggered_at_stop : sym.stop_trigger;
+
+                            // Format Frozen Return (with padlock)
+                            curRetStr = `<span class="opacity-70 text-[10px] mr-1" title="Frozen Exit Return">🔒</span>${fRet.toFixed(2)}%`;
+                            curRetColor = fRet >= 0 ? 'text-emerald-500' : 'text-rose-500';
+                            
+                            // Format Frozen HWM & Stop
+                            hwmStr = fHwm !== undefined ? `${fHwm.toFixed(2)}%` : '---';
+                            hwmColor = fHwm !== undefined && fHwm > 0 ? 'text-emerald-500/70' : 'text-slate-400';
+                            stopLevelStr = fStop !== undefined && fStop !== -999.0 ? `${fStop.toFixed(2)}%` : '---';
+
+                        } else {
+                            // Normal Live Rendering
+                            curRetStr = sym.current_return !== undefined ? `${sym.current_return.toFixed(2)}%` : '---';
+                            curRetColor = sym.current_return >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                            
+                            hwmStr = sym.high_water_mark !== undefined && sym.high_water_mark !== -999.0 ? `${sym.high_water_mark.toFixed(2)}%` : '---';
+                            hwmColor = sym.high_water_mark > 0 ? 'text-emerald-400' : 'text-slate-300';
+                            
+                            stopLevelStr = sym.stop_trigger !== undefined && sym.stop_trigger !== -999.0 ? `${sym.stop_trigger.toFixed(2)}%` : '---';
+                        }
 
                         html += `
                                     <tr class="hover:bg-slate-800 transition-colors">
                                         <td class="px-5 py-3 text-slate-200"><div class="max-w-[400px] truncate" title="${name}">${name}</div></td>
                                         <td class="px-5 py-3 text-right font-mono ${mcColor}">${mcProb}</td>
                                         <td class="px-5 py-3 text-center">${statusBadge}</td>
-                                        <td class="px-5 py-3 text-right font-mono text-slate-400">${stopLevel}</td>
-                                        <td class="px-5 py-3 text-right font-mono ${curRetColor}">${curRet}</td>
-                                        <td class="px-5 py-3 text-right font-mono ${hwmColor}">${hwm}</td>
+                                        <td class="px-5 py-3 text-right font-mono text-slate-400">${stopLevelStr}</td>
+                                        <td class="px-5 py-3 text-right font-mono ${curRetColor}">${curRetStr}</td>
+                                        <td class="px-5 py-3 text-right font-mono ${hwmColor}">${hwmStr}</td>
                                     </tr>
                         `;
                     });
