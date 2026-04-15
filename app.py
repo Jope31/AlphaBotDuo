@@ -28,12 +28,11 @@ def trigger_alpha_bot(force=False):
 
 # --- 2. Background Scheduler ---
 def run_scheduler():
-    """Runs the scheduler with a 5-second offset from market open."""
-    # 1. Schedule the first run for 5 seconds after market open (9:30:05 AM)
-    schedule.every().day.at("09:30:05", "America/New_York").do(trigger_alpha_bot, force=False)
+    """Runs the scheduler with a 20-minute grace period from market open."""
+    # 1. Schedule the first run for 9:50:00 AM ET (Avoids morning chop)
+    schedule.every().day.at("09:50:00", "America/New_York").do(trigger_alpha_bot, force=False)
     
     # 2. Schedule recurring runs at exact 5-minute marks every hour
-    # This guarantees the bot picks up immediately even if started mid-day.
     minute_marks = [
         "00:00", "05:00", "10:00", "15:00", "20:00", "25:00", 
         "30:00", "35:00", "40:00", "45:00", "50:00", "55:00"
