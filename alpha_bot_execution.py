@@ -583,6 +583,7 @@ def main():
             bot_state[symphony_id]["mc_prob"] = prob_beating
             bot_state[symphony_id]["stop_trigger"] = stop_trigger_level
             bot_state[symphony_id]["active_stop_distance"] = dynamic_trailing_stop
+            bot_state[symphony_id]["symphony_vol"] = symphony_vol
             save_state(bot_state)
 
             # --- 3. Arming & Disarming Mechanism ---
