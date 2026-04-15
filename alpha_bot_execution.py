@@ -590,7 +590,7 @@ def main():
             should_arm = False
             arm_reason = ""
             
-            # Substantial change: Using -0.50% instead of 0.0% to filter noise
+            # Using -0.50% instead of 0.0% to filter noise
             if prob_beating < TRIGGER_THRESHOLD_PCT:
                 should_arm = True
                 arm_reason = f"MC Prob {prob_beating:.1f}%"
@@ -628,10 +628,15 @@ def main():
                             actual_symphony_id, account
                         )
                         
-                        # Fix: Only update HWM/Trigger status if the API call actually succeeded
                         if success:
                             bot_state[symphony_id]["armed"] = False
                             bot_state[symphony_id]["triggered"] = True
+                            
+                            # FREEZE THE METRICS FOR THE DASHBOARD
+                            bot_state[symphony_id]["triggered_at_return"] = current_return
+                            bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
+                            bot_state[symphony_id]["triggered_at_stop"] = stop_trigger_level
+                            
                             bot_state[symphony_id]["high_water_mark"] = -999.0
                             save_state(bot_state)
                             
@@ -646,9 +651,14 @@ def main():
                             print("     !!! EXECUTION FAILED. Keeping state active to retry next loop !!!")
                     else:
                         print("  -> [DRY RUN] Execution bypassed.")
-                        # Dry runs always 'succeed' internally
                         bot_state[symphony_id]["armed"] = False
                         bot_state[symphony_id]["triggered"] = True
+                        
+                        # FREEZE THE METRICS FOR THE DASHBOARD
+                        bot_state[symphony_id]["triggered_at_return"] = current_return
+                        bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
+                        bot_state[symphony_id]["triggered_at_stop"] = stop_trigger_level
+                        
                         bot_state[symphony_id]["high_water_mark"] = -999.0
                         save_state(bot_state)
 
