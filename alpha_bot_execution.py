@@ -31,9 +31,10 @@ LIVE_EXECUTION = os.getenv("LIVE_EXECUTION", "False").lower() in ("true", "1", "
 # --- STRATEGY PARAMETERS ---
 TRIGGER_THRESHOLD_PCT = float(os.getenv("TRIGGER_THRESHOLD_PCT", "15.0"))
 MAX_SQUEEZE_FLOOR = float(os.getenv("MAX_SQUEEZE_FLOOR", "0.20"))
-TAKE_PROFIT_MC_PCT = float(os.getenv("TAKE_PROFIT_MC_PCT", "5.0")) # Smart Trailing Exit
-TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5"))  # Fallback Start Stop
-ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))  # Fallback End Stop
+TAKE_PROFIT_MC_PCT = float(os.getenv("TAKE_PROFIT_MC_PCT", "5.0")) 
+LOSS_ARM_PCT = float(os.getenv("LOSS_ARM_PCT", "1.5")) # Vol-Scaled Flash Crash Floor
+TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5"))
+ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))  
 BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0"))
 
 # --- VOLATILITY PARAMETERS ---
@@ -437,7 +438,9 @@ def main():
 
     is_weekday = current_et.weekday() < 5
     current_time = current_et.time()
-    market_open = dt_time(9, 50)  # Updated: 20-minute Grace Period
+    
+    # 10:30 AM Post-Mortem Extension: Skips Opening Auction entirely
+    market_open = dt_time(10, 30)  
     market_close = dt_time(16, 0)
     rebalance_blackout = dt_time(15, 54)  # Start blocking just before 3:55 PM ET
 
@@ -482,7 +485,7 @@ def main():
 
     # --- LOGARITHMIC TIME DECAY RATIO CALCULATION ---
     # Calculates how far into the trading day we are (0.0 to 1.0)
-    m_open_dt = current_et.replace(hour=9, minute=50, second=0, microsecond=0)
+    m_open_dt = current_et.replace(hour=10, minute=30, second=0, microsecond=0)
     m_close_dt = current_et.replace(hour=16, minute=0, second=0, microsecond=0)
 
     total_trading_minutes = (m_close_dt - m_open_dt).total_seconds() / 60.0
@@ -528,6 +531,7 @@ def main():
             for h in holdings:
                 h["ticker"] = h.get("working_ticker", h.get("ticker"))
 
+            # --- INIT BOT STATE & BACKWARD COMPATIBILITY ---
             if symphony_id not in bot_state:
                 bot_state[symphony_id] = {
                     "high_water_mark": current_return,
@@ -535,17 +539,21 @@ def main():
                     "tp_armed": False,
                     "triggered": False,
                     "mc_history": [],
+                    "below_stop_count": 0,
+                    "above_tp_count": 0,
+                    "breakeven_locked": False
                 }
 
-            if "triggered" not in bot_state[symphony_id]:
-                bot_state[symphony_id]["triggered"] = False
-
-            if "tp_armed" not in bot_state[symphony_id]:
-                bot_state[symphony_id]["tp_armed"] = False
-
+            for key in ["triggered", "tp_armed", "breakeven_locked"]:
+                if key not in bot_state[symphony_id]:
+                    bot_state[symphony_id][key] = False
+            for key in ["below_stop_count", "above_tp_count"]:
+                if key not in bot_state[symphony_id]:
+                    bot_state[symphony_id][key] = 0
             if "mc_history" not in bot_state[symphony_id]:
                 bot_state[symphony_id]["mc_history"] = []
 
+            # Update High Water Mark
             if (
                 current_return > bot_state[symphony_id]["high_water_mark"]
                 and not bot_state[symphony_id]["triggered"]
@@ -577,17 +585,19 @@ def main():
                 (morning_stop - afternoon_stop) * decay_curve
             )
 
-            # --- 2. Arming & Disarming Mechanism (Strangler) ---
+            # --- 2. Arming & Disarming Mechanism (Strangler & Vol-Scaled Flash Crash) ---
             should_arm = False
             arm_reason = ""
 
-            # Using -0.50% instead of 0.0% to filter noise
+            # Flash Crash Volatility Scale Fix (Prevents over-arming leveraged assets)
+            effective_loss_threshold = max(LOSS_ARM_PCT, symphony_vol)
+
             if prob_beating < TRIGGER_THRESHOLD_PCT and prob_beating >= TAKE_PROFIT_MC_PCT:
                 should_arm = True
                 arm_reason = f"MC Prob {prob_beating:.1f}%"
-            elif current_return < -0.50:
+            elif current_return < -effective_loss_threshold:
                 should_arm = True
-                arm_reason = "Sustained Negative Return (<-0.50%)"
+                arm_reason = f"Vol-Scaled Loss (<-{effective_loss_threshold:.2f}%)"
 
             if (
                 should_arm
@@ -604,6 +614,7 @@ def main():
             ):
                 if prob_beating > (TRIGGER_THRESHOLD_PCT * 2) and current_return > 0.0:
                     bot_state[symphony_id]["armed"] = False
+                    bot_state[symphony_id]["below_stop_count"] = 0
                     print(f"  *** {symphony_name} DISARMED (Conditions Recovered) ***")
 
             # --- 3. Strangler (SMA + Multiplier) ---
@@ -626,12 +637,16 @@ def main():
             else:
                 active_trailing_stop = dynamic_trailing_stop
 
-            # --- 4. Dynamic Trailing Stop & Breakeven Lock Math ---
+            # --- 4. Dynamic Trailing Stop & Vol-Scaled Breakeven Lock Math ---
             safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
-
             base_stop_level = safe_hwm - active_trailing_stop
 
-            if safe_hwm >= BREAKEVEN_ACTIVATION_PCT:
+            # Sticky Vol-Scaled Breakeven Lock 
+            effective_breakeven_activation = max(BREAKEVEN_ACTIVATION_PCT, symphony_vol)
+            if safe_hwm >= effective_breakeven_activation:
+                bot_state[symphony_id]["breakeven_locked"] = True
+
+            if bot_state[symphony_id]["breakeven_locked"]:
                 stop_trigger_level = max(base_stop_level, 0.0)
             else:
                 stop_trigger_level = base_stop_level
@@ -639,19 +654,43 @@ def main():
             if bot_state[symphony_id]["triggered"]:
                 stop_trigger_level = -999.0
 
-            # --- 4.5 Take-Profit Smart Trailing Exit Math ---
+            # --- 4.5 2-Tick Confirmation Trailing Stop Logic ---
+            is_trailing_stop_hit = False
+            if bot_state[symphony_id]["armed"] and not bot_state[symphony_id]["triggered"]:
+                if current_return <= stop_trigger_level:
+                    bot_state[symphony_id]["below_stop_count"] += 1
+                    if bot_state[symphony_id]["below_stop_count"] == 1:
+                        print(f"  ⚠️ {symphony_name[:35]} dipped below stop. Awaiting 2nd tick confirmation...")
+                    elif bot_state[symphony_id]["below_stop_count"] >= 2:
+                        is_trailing_stop_hit = True
+                else:
+                    if bot_state[symphony_id]["below_stop_count"] > 0:
+                        print(f"  ✅ {symphony_name[:35]} recovered above stop. Confirmation reset.")
+                    bot_state[symphony_id]["below_stop_count"] = 0
+
+            # --- 4.6 Take-Profit Smart Trailing Exit Math (With 2-Tick Confirmation) ---
             tp_triggered_now = False
             if prob_beating < TAKE_PROFIT_MC_PCT:
                 if not bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
                     bot_state[symphony_id]["tp_armed"] = True
+                    bot_state[symphony_id]["above_tp_count"] = 0
                     print(f"  *** {symphony_name} TP-ARMED (Exceptional Gain: MC Prob {prob_beating:.1f}% < {TAKE_PROFIT_MC_PCT}%) ***")
             elif bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
                 if prob_beating >= TAKE_PROFIT_MC_PCT:
-                    if current_return > 0:
-                        tp_triggered_now = True
-                    else:
-                        bot_state[symphony_id]["tp_armed"] = False
-                        print(f"  *** {symphony_name} TP-DISARMED (MC Rose but Return <= 0) ***")
+                    bot_state[symphony_id]["above_tp_count"] += 1
+                    if bot_state[symphony_id]["above_tp_count"] == 1:
+                        print(f"  ⚠️ {symphony_name[:35]} TP signal flashed. Awaiting 2nd tick confirmation...")
+                    elif bot_state[symphony_id]["above_tp_count"] >= 2:
+                        if current_return > 0:
+                            tp_triggered_now = True
+                        else:
+                            bot_state[symphony_id]["tp_armed"] = False
+                            bot_state[symphony_id]["above_tp_count"] = 0
+                            print(f"  *** {symphony_name} TP-DISARMED (MC Rose but Return <= 0) ***")
+                else:
+                    if bot_state[symphony_id]["above_tp_count"] > 0:
+                        print(f"  📉 {symphony_name[:35]} TP signal vanished. Still cranking.")
+                    bot_state[symphony_id]["above_tp_count"] = 0
 
 
             print(
@@ -671,8 +710,6 @@ def main():
             save_state(bot_state)
 
             # --- 5. Execution Check ---
-            is_trailing_stop_hit = bot_state[symphony_id]["armed"] and (current_return <= stop_trigger_level)
-
             if is_trailing_stop_hit or tp_triggered_now:
                 reason = "Take-Profit" if tp_triggered_now else "Trailing Stop"
                 print(f"  🚨 {reason.upper()} HIT FOR {symphony_name} 🚨")
