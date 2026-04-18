@@ -30,29 +30,11 @@ def trigger_alpha_bot(force=False):
 
 # --- 2. Background Scheduler ---
 def run_scheduler():
-    """Runs the scheduler with a 20-minute grace period from market open."""
-    # 1. Schedule the first run for 9:50:00 AM ET (Avoids morning chop)
-    schedule.every().day.at("09:50:00", "America/New_York").do(
-        trigger_alpha_bot, force=False
-    )
-
-    # 2. Schedule recurring runs at exact 5-minute marks every hour
-    minute_marks = [
-        "00:00",
-        "05:00",
-        "10:00",
-        "15:00",
-        "20:00",
-        "25:00",
-        "30:00",
-        "35:00",
-        "40:00",
-        "45:00",
-        "50:00",
-        "55:00",
-    ]
-    for mark in minute_marks:
-        schedule.every().hour.at(mark).do(trigger_alpha_bot, force=False)
+    """Runs the scheduler every 1-minute to support Multi-Tick confirmations."""
+    # Run the execution logic every minute exactly on the 00 second mark.
+    # The time-based gatekeeper in alpha_bot_execution.py handles blocking
+    # executions outside of market hours and the new 10:30 AM ET grace period.
+    schedule.every().minute.at(":00").do(trigger_alpha_bot, force=False)
 
     while True:
         schedule.run_pending()
@@ -214,6 +196,7 @@ def get_settings():
             "DISCORD_WEBHOOK_URL": env_vars.get("DISCORD_WEBHOOK_URL", ""),
             "TRIGGER_THRESHOLD_PCT": env_vars.get("TRIGGER_THRESHOLD_PCT", "15.0"),
             "TAKE_PROFIT_MC_PCT": env_vars.get("TAKE_PROFIT_MC_PCT", "5.0"),
+            "LOSS_ARM_PCT": env_vars.get("LOSS_ARM_PCT", "1.5"),
             "MAX_SQUEEZE_FLOOR": env_vars.get("MAX_SQUEEZE_FLOOR", "0.20"),
             "BASE_ATR_MULTIPLIER": env_vars.get("BASE_ATR_MULTIPLIER", "2.0"),
             "MIN_MULTIPLIER_FLOOR": env_vars.get("MIN_MULTIPLIER_FLOOR", "0.5"),
@@ -242,6 +225,7 @@ def save_settings():
         "DISCORD_WEBHOOK_URL",
         "TRIGGER_THRESHOLD_PCT",
         "TAKE_PROFIT_MC_PCT",
+        "LOSS_ARM_PCT",
         "MAX_SQUEEZE_FLOOR",
         "BASE_ATR_MULTIPLIER",
         "MIN_MULTIPLIER_FLOOR",
