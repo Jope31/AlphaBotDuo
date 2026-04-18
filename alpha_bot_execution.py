@@ -50,6 +50,7 @@ NEIGHBOR_K = 150
 # ==========================================
 STATE_FILE = "bot_state.json"
 HISTORY_CACHE_FILE = "history_cache.json"
+CHART_FILE = "chart_history.json"
 
 
 def load_state():
@@ -67,6 +68,23 @@ def save_state(state):
     """Saves the bot state to a JSON file."""
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=4)
+
+
+def load_chart_history():
+    """Loads the intraday chart history."""
+    if os.path.exists(CHART_FILE):
+        try:
+            with open(CHART_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_chart_history(history):
+    """Saves the intraday chart history."""
+    with open(CHART_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, separators=(',', ':')) # Compressed JSON
 
 
 # ==========================================
@@ -473,15 +491,23 @@ def main():
         return
 
     bot_state = load_state()
-    current_date_str = current_et.strftime("%Y-%m-%d")
+    chart_history = load_chart_history()
 
+    current_date_str = current_et.strftime("%Y-%m-%d")
+    current_time_str = current_et.strftime("%H:%M")
+
+    # WIPE STATE ON NEW DAY
     if bot_state.get("date") != current_date_str:
         print(
             f"  -> New trading day detected ({current_date_str} ET). "
-            "Wiping old state memory."
+            "Wiping old state and chart memory."
         )
         bot_state = {"date": current_date_str}
         save_state(bot_state)
+
+    if chart_history.get("date") != current_date_str:
+        chart_history = {"date": current_date_str, "symphonies": {}}
+        save_chart_history(chart_history)
 
     # --- LOGARITHMIC TIME DECAY RATIO CALCULATION ---
     # Calculates how far into the trading day we are (0.0 to 1.0)
@@ -543,6 +569,11 @@ def main():
                     "above_tp_count": 0,
                     "breakeven_locked": False
                 }
+
+            # Tracking previous state to determine Chart Events
+            prev_armed = bot_state[symphony_id].get("armed", False)
+            prev_tp_armed = bot_state[symphony_id].get("tp_armed", False)
+            prev_triggered = bot_state[symphony_id].get("triggered", False)
 
             for key in ["triggered", "tp_armed", "breakeven_locked"]:
                 if key not in bot_state[symphony_id]:
@@ -709,6 +740,30 @@ def main():
             bot_state[symphony_id]["symphony_vol"] = symphony_vol
             save_state(bot_state)
 
+            # --- Chart Visualization Logging ---
+            chart_event = None
+            if is_trailing_stop_hit or tp_triggered_now:
+                chart_event = "Triggered"
+            elif bot_state[symphony_id]["armed"] and not prev_armed:
+                chart_event = "Armed"
+            elif bot_state[symphony_id]["tp_armed"] and not prev_tp_armed:
+                chart_event = "TP-Armed"
+
+            # We only track the stop line if the bot is actually armed.
+            tracked_stop = stop_trigger_level if (bot_state[symphony_id]["armed"] or bot_state[symphony_id]["tp_armed"] or bot_state[symphony_id]["triggered"] or prev_triggered) else None
+            # If triggered previously, lock the stop value in the chart to the exit return
+            if prev_triggered:
+                tracked_stop = bot_state[symphony_id].get("triggered_at_stop", -999.0)
+                if tracked_stop == -999.0: tracked_stop = None
+
+            sym_chart_data = chart_history["symphonies"].setdefault(symphony_id, [])
+            sym_chart_data.append({
+                "time": current_time_str,
+                "return": current_return,
+                "stop": tracked_stop,
+                "event": chart_event
+            })
+
             # --- 5. Execution Check ---
             if is_trailing_stop_hit or tp_triggered_now:
                 reason = "Take-Profit" if tp_triggered_now else "Trailing Stop"
@@ -733,6 +788,9 @@ def main():
 
                         bot_state[symphony_id]["high_water_mark"] = -999.0
                         save_state(bot_state)
+
+                        # Update Chart to reflect exact freeze
+                        sym_chart_data[-1]["stop"] = bot_state[symphony_id]["triggered_at_stop"]
 
                         send_discord_alert(
                             symphony_name,
@@ -761,6 +819,9 @@ def main():
                     bot_state[symphony_id]["high_water_mark"] = -999.0
                     save_state(bot_state)
 
+                    # Update Chart to reflect exact freeze
+                    sym_chart_data[-1]["stop"] = bot_state[symphony_id]["triggered_at_stop"]
+
                     send_discord_alert(
                         symphony_name,
                         current_return,
@@ -770,6 +831,9 @@ def main():
                         LIVE_EXECUTION,
                         exit_reason=reason
                     )
+    
+    # Save the aggregated chart history at the end of the evaluation loop
+    save_chart_history(chart_history)
 
 
 if __name__ == "__main__":
