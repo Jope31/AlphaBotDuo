@@ -31,6 +31,7 @@ LIVE_EXECUTION = os.getenv("LIVE_EXECUTION", "False").lower() in ("true", "1", "
 # --- STRATEGY PARAMETERS ---
 TRIGGER_THRESHOLD_PCT = float(os.getenv("TRIGGER_THRESHOLD_PCT", "15.0"))
 MAX_SQUEEZE_FLOOR = float(os.getenv("MAX_SQUEEZE_FLOOR", "0.20"))
+TAKE_PROFIT_MC_PCT = float(os.getenv("TAKE_PROFIT_MC_PCT", "5.0")) # Smart Trailing Exit
 TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5"))  # Fallback Start Stop
 ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))  # Fallback End Stop
 BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0"))
@@ -130,14 +131,17 @@ def execute_sell_to_cash(actual_symphony_id, account_id):
 
 
 def send_discord_alert(
-    symphony_name, current_return, prob_beating, stop_trigger_level, high_water_mark, is_live
+    symphony_name, current_return, prob_beating, stop_trigger_level, high_water_mark, is_live, exit_reason="Trailing Stop"
 ):
     """Sends a discord alert about trade execution."""
     if not DISCORD_WEBHOOK_URL:
         return
 
     # --- Context-Aware Discord Formatting ---
-    if current_return > 0:
+    if exit_reason == "Take-Profit":
+        base_title = "🎯 Smart Take-Profit Locked"
+        live_color = 5763719  # Discord Green
+    elif current_return > 0:
         base_title = "✅ Profit Locked"
         live_color = 5763719  # Discord Green
     elif current_return < 0:
@@ -148,7 +152,7 @@ def send_discord_alert(
         live_color = 3447003  # Discord Blue
 
     title = (
-        f"{base_title}: Trailing Stop Triggered"
+        f"{base_title}: {exit_reason} Triggered"
         if is_live
         else f"⚠️ [DRY RUN] {base_title}"
     )
@@ -528,12 +532,16 @@ def main():
                 bot_state[symphony_id] = {
                     "high_water_mark": current_return,
                     "armed": False,
+                    "tp_armed": False,
                     "triggered": False,
                     "mc_history": [],
                 }
 
             if "triggered" not in bot_state[symphony_id]:
                 bot_state[symphony_id]["triggered"] = False
+
+            if "tp_armed" not in bot_state[symphony_id]:
+                bot_state[symphony_id]["tp_armed"] = False
 
             if "mc_history" not in bot_state[symphony_id]:
                 bot_state[symphony_id]["mc_history"] = []
@@ -569,12 +577,12 @@ def main():
                 (morning_stop - afternoon_stop) * decay_curve
             )
 
-            # --- 2. Arming & Disarming Mechanism ---
+            # --- 2. Arming & Disarming Mechanism (Strangler) ---
             should_arm = False
             arm_reason = ""
 
             # Using -0.50% instead of 0.0% to filter noise
-            if prob_beating < TRIGGER_THRESHOLD_PCT:
+            if prob_beating < TRIGGER_THRESHOLD_PCT and prob_beating >= TAKE_PROFIT_MC_PCT:
                 should_arm = True
                 arm_reason = f"MC Prob {prob_beating:.1f}%"
             elif current_return < -0.50:
@@ -631,6 +639,21 @@ def main():
             if bot_state[symphony_id]["triggered"]:
                 stop_trigger_level = -999.0
 
+            # --- 4.5 Take-Profit Smart Trailing Exit Math ---
+            tp_triggered_now = False
+            if prob_beating < TAKE_PROFIT_MC_PCT:
+                if not bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
+                    bot_state[symphony_id]["tp_armed"] = True
+                    print(f"  *** {symphony_name} TP-ARMED (Exceptional Gain: MC Prob {prob_beating:.1f}% < {TAKE_PROFIT_MC_PCT}%) ***")
+            elif bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
+                if prob_beating >= TAKE_PROFIT_MC_PCT:
+                    if current_return > 0:
+                        tp_triggered_now = True
+                    else:
+                        bot_state[symphony_id]["tp_armed"] = False
+                        print(f"  *** {symphony_name} TP-DISARMED (MC Rose but Return <= 0) ***")
+
+
             print(
                 f"  -> {symphony_name[:35]}: Ret: {current_return:.2f}% | "
                 f"HWM: {high_water_mark:.2f}% | "
@@ -648,54 +671,28 @@ def main():
             save_state(bot_state)
 
             # --- 5. Execution Check ---
-            if bot_state[symphony_id]["armed"]:
-                if current_return <= stop_trigger_level:
-                    print(f"  🚨 TRAILING STOP HIT FOR {symphony_name} 🚨")
+            is_trailing_stop_hit = bot_state[symphony_id]["armed"] and (current_return <= stop_trigger_level)
 
-                    if LIVE_EXECUTION:
-                        print(
-                            "  -> [LIVE EXECUTION] Sending sell-to-cash "
-                            "command to Composer API..."
-                        )
-                        success = execute_sell_to_cash(actual_symphony_id, account)
+            if is_trailing_stop_hit or tp_triggered_now:
+                reason = "Take-Profit" if tp_triggered_now else "Trailing Stop"
+                print(f"  🚨 {reason.upper()} HIT FOR {symphony_name} 🚨")
 
-                        if success:
-                            bot_state[symphony_id]["armed"] = False
-                            bot_state[symphony_id]["triggered"] = True
+                if LIVE_EXECUTION:
+                    print(
+                        "  -> [LIVE EXECUTION] Sending sell-to-cash "
+                        "command to Composer API..."
+                    )
+                    success = execute_sell_to_cash(actual_symphony_id, account)
 
-                            # FREEZE THE METRICS FOR THE DASHBOARD
-                            bot_state[symphony_id][
-                                "triggered_at_return"
-                            ] = current_return
-                            bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
-                            bot_state[symphony_id][
-                                "triggered_at_stop"
-                            ] = stop_trigger_level
-
-                            bot_state[symphony_id]["high_water_mark"] = -999.0
-                            save_state(bot_state)
-
-                            send_discord_alert(
-                                symphony_name,
-                                current_return,
-                                prob_beating,
-                                stop_trigger_level,
-                                safe_hwm,
-                                LIVE_EXECUTION,
-                            )
-                        else:
-                            print(
-                                "     !!! EXECUTION FAILED. Keeping state active to retry next loop !!!"
-                            )
-                    else:
-                        print("  -> [DRY RUN] Execution bypassed.")
+                    if success:
                         bot_state[symphony_id]["armed"] = False
+                        bot_state[symphony_id]["tp_armed"] = False
                         bot_state[symphony_id]["triggered"] = True
 
                         # FREEZE THE METRICS FOR THE DASHBOARD
                         bot_state[symphony_id]["triggered_at_return"] = current_return
                         bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
-                        bot_state[symphony_id]["triggered_at_stop"] = stop_trigger_level
+                        bot_state[symphony_id]["triggered_at_stop"] = current_return if tp_triggered_now else stop_trigger_level
 
                         bot_state[symphony_id]["high_water_mark"] = -999.0
                         save_state(bot_state)
@@ -707,7 +704,35 @@ def main():
                             stop_trigger_level,
                             safe_hwm,
                             LIVE_EXECUTION,
+                            exit_reason=reason
                         )
+                    else:
+                        print(
+                            "     !!! EXECUTION FAILED. Keeping state active to retry next loop !!!"
+                        )
+                else:
+                    print("  -> [DRY RUN] Execution bypassed.")
+                    bot_state[symphony_id]["armed"] = False
+                    bot_state[symphony_id]["tp_armed"] = False
+                    bot_state[symphony_id]["triggered"] = True
+
+                    # FREEZE THE METRICS FOR THE DASHBOARD
+                    bot_state[symphony_id]["triggered_at_return"] = current_return
+                    bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
+                    bot_state[symphony_id]["triggered_at_stop"] = current_return if tp_triggered_now else stop_trigger_level
+
+                    bot_state[symphony_id]["high_water_mark"] = -999.0
+                    save_state(bot_state)
+
+                    send_discord_alert(
+                        symphony_name,
+                        current_return,
+                        prob_beating,
+                        stop_trigger_level,
+                        safe_hwm,
+                        LIVE_EXECUTION,
+                        exit_reason=reason
+                    )
 
 
 if __name__ == "__main__":
