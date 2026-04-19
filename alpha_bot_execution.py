@@ -475,7 +475,13 @@ def main():
 
     # --- COMPOSER REBALANCE BLACKOUT ---
     if rebalance_blackout <= current_time <= market_close:
-        if not force_run:
+	
+       # NEW: Generate post-mortem right as the blackout begins (15:54 ET)
+       bot_state = load_state()
+       current_date_str = current_et.strftime("%Y-%m-%d")
+       generate_eod_snapshot(bot_state, current_date_str) 
+
+       if not force_run:
             print(
                 f"  -> 🛑 COMPOSER REBALANCE BLACKOUT (ET: {current_et.strftime('%H:%M')}). "
                 "Pausing to prevent false triggers during Composer's end-of-day rebalance..."
