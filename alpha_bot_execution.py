@@ -1,4 +1,4 @@
-"""Core execution logic for Alpha Bot with VIX Regimes, Lockfile, and Optimistic Saving."""
+"""Core execution logic for Alpha Bot with VIX Regimes, Lockfile, and Atomic Saving."""
 
 import os
 import sys
@@ -54,7 +54,7 @@ SIMULATION_PATHS = 5000
 NEIGHBOR_K = 150
 
 # ==========================================
-# 2. STATE MANAGEMENT & LOGGING
+# 2. STATE MANAGEMENT & LOCKING (ATOMIC)
 # ==========================================
 STATE_FILE = "bot_state.json"
 HISTORY_CACHE_FILE = "history_cache.json"
@@ -67,7 +67,6 @@ def acquire_lock():
     """Acquires a file lock to prevent overlapping minute executions."""
     if os.path.exists(LOCK_FILE):
         try:
-            # If a lock is older than 3 minutes, assume a crash and break it
             if time.time() - os.path.getmtime(LOCK_FILE) > 180:
                 os.remove(LOCK_FILE)
             else:
@@ -92,20 +91,25 @@ def release_lock():
 
 
 def load_state():
-    """Loads the bot state from a JSON file."""
+    """Loads the bot state safely."""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             return {}
     return {}
 
 
 def save_state(state):
-    """Saves the bot state to a JSON file."""
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=4)
+    """Saves the bot state atomically using a temporary file swap."""
+    temp_file = f"{STATE_FILE}.tmp"
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=4)
+        os.replace(temp_file, STATE_FILE)
+    except Exception as e:
+        print(f"Error saving state: {e}")
 
 
 def load_chart_history():
@@ -114,15 +118,20 @@ def load_chart_history():
         try:
             with open(CHART_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             return {}
     return {}
 
 
 def save_chart_history(history):
-    """Saves the intraday chart history."""
-    with open(CHART_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, separators=(",", ":"))
+    """Saves chart history atomically."""
+    temp_file = f"{CHART_FILE}.tmp"
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(history, f, separators=(",", ":"))
+        os.replace(temp_file, CHART_FILE)
+    except Exception as e:
+        print(f"Error saving chart: {e}")
 
 
 def analyze_intraday_data(api_client, symbols, target_date_et, lookback_days=5):
@@ -196,11 +205,9 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
     report_file = f"post_mortem_{current_date_str}.json"
 
     if not is_post_rebalance:
-        # ========================================================
         # STAGE 1 (15:54 ET): Freeze Math & Shadow Returns
-        # ========================================================
         if os.path.exists(report_file):
-            return  # Already generated Stage 1 today
+            return 
 
         print(f"  -> Generating Stage 1 Post-Mortem (Locking Math): {report_file}")
 
@@ -226,14 +233,12 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
 
                 f_ret = sym.get("triggered_at_return", 0.0)
                 live_ret = sym.get("current_return", 0.0)
-                saved_pct = f_ret - live_ret  # Guard Alpha Math locked before API wiped
+                saved_pct = f_ret - live_ret 
 
                 if saved_pct > 0:
                     report["summary"]["positive_guard_alpha_count"] += 1
 
-                exit_reason = (
-                    "Take-Profit" if f_ret == sym.get("triggered_at_stop") else "Trailing Stop"
-                )
+                exit_reason = "Take-Profit" if f_ret == sym.get("triggered_at_stop") else "Trailing Stop"
 
                 report["triggers"].append(
                     {
@@ -253,9 +258,7 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
             json.dump(report, f, indent=4)
 
     else:
-        # ========================================================
         # STAGE 2 (16:00 ET): Inject Tomorrow's Holdings
-        # ========================================================
         if not os.path.exists(report_file):
             print("  -> Warning: Stage 1 snapshot missing. Cannot inject new holdings.")
             return
@@ -264,24 +267,21 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
             report = json.load(f)
 
         if "STATUS" not in report.get("tomorrow_target_holdings", {}):
-            return  # Already completed Stage 2 today
+            return 
 
         print(f"  -> Generating Stage 2 Post-Mortem (Injecting Holdings): {report_file}")
 
-        # Aggregate tomorrow's holdings from the updated bot_state
         portfolio_holdings_summary = {}
 
         for sym_id, sym in bot_state.items():
             if sym_id == "date":
                 continue
 
-            # 1. Update individual trigger next_day_holdings
             sym_holdings = [h.get("ticker") for h in sym.get("current_holdings", [])]
             for trigger in report.get("triggers", []):
                 if trigger.get("symphony_name") == sym.get("name"):
                     trigger["next_day_holdings"] = sym_holdings
 
-            # 2. Update portfolio-wide aggregate map
             for holding in sym.get("current_holdings", []):
                 ticker = holding.get("ticker", "UNKNOWN")
                 weight = holding.get("allocation", 0.0)
@@ -289,7 +289,6 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
                     portfolio_holdings_summary[ticker] = 0.0
                 portfolio_holdings_summary[ticker] += weight
 
-        # Sort portfolio holdings by weight
         sorted_holdings = dict(
             sorted(portfolio_holdings_summary.items(), key=lambda item: item[1], reverse=True)
         )
@@ -303,7 +302,6 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
 # 3. API CONNECTORS & RATE LIMIT HANDLING
 # ==========================================
 def get_composer_headers(key=None, secret=None):
-    """Returns headers required for the Composer API."""
     return {
         "x-api-key-id": key or COMPOSER_KEY_ID,
         "authorization": f"Bearer {secret or COMPOSER_SECRET}",
@@ -312,16 +310,11 @@ def get_composer_headers(key=None, secret=None):
 
 
 def get_alpaca_headers():
-    """Returns headers required for the Alpaca API."""
     return {"APCA-API-KEY-ID": ALPACA_KEY, "APCA-API-SECRET-KEY": ALPACA_SECRET}
 
 
 def fetch_symphony_stats(account_id):
-    """Fetches symphony stats for a given account ID."""
-    url = (
-        f"https://api.composer.trade/api/v0.1/portfolio/accounts/"
-        f"{account_id}/symphony-stats-meta"
-    )
+    url = f"https://api.composer.trade/api/v0.1/portfolio/accounts/{account_id}/symphony-stats-meta"
     try:
         response = requests.get(url, headers=get_composer_headers(), timeout=15)
         time.sleep(1.5)
@@ -334,11 +327,7 @@ def fetch_symphony_stats(account_id):
 
 
 def execute_sell_to_cash(actual_symphony_id, account_id):
-    """Executes a sell-to-cash command for a symphony."""
-    url = (
-        f"https://api.composer.trade/api/v0.1/deploy/accounts/{account_id}"
-        f"/symphonies/{actual_symphony_id}/go-to-cash"
-    )
+    url = f"https://api.composer.trade/api/v0.1/deploy/accounts/{account_id}/symphonies/{actual_symphony_id}/go-to-cash"
     try:
         response = requests.post(url, headers=get_composer_headers(), json={}, timeout=10)
         print(f"     -> [API Status]: HTTP {response.status_code}")
@@ -359,40 +348,26 @@ def execute_sell_to_cash(actual_symphony_id, account_id):
         return False
 
 
-def send_discord_alert(
-    symphony_name,
-    current_return,
-    prob_beating,
-    stop_trigger_level,
-    high_water_mark,
-    is_live,
-    exit_reason="Trailing Stop",
-):
-    """Sends a discord alert about trade execution."""
+def send_discord_alert(symphony_name, current_return, prob_beating, stop_trigger_level, high_water_mark, is_live, exit_reason="Trailing Stop"):
     if not DISCORD_WEBHOOK_URL:
         return
 
-    # --- Context-Aware Discord Formatting ---
     if exit_reason == "Take-Profit":
         base_title = "🎯 Smart Take-Profit Locked"
-        live_color = 5763719  # Discord Green
+        live_color = 5763719  
     elif current_return > 0:
         base_title = "✅ Profit Locked"
-        live_color = 5763719  # Discord Green
+        live_color = 5763719 
     elif current_return < 0:
         base_title = "🛑 Bleed Stopped"
-        live_color = 15548997  # Discord Red
+        live_color = 15548997 
     else:
         base_title = "🛡️ Breakeven Locked"
-        live_color = 3447003  # Discord Blue
+        live_color = 3447003 
 
     title = f"{base_title}: {exit_reason} Triggered" if is_live else f"⚠️ [DRY RUN] {base_title}"
-    color = live_color if is_live else 16766720  # Yellow for dry runs
-    action_text = (
-        "Executed 'Sell to Cash' via API. " "Trade queued for Composer execution window."
-        if is_live
-        else "Bypassed (Dry Run Mode)"
-    )
+    color = live_color if is_live else 16766720  
+    action_text = "Executed 'Sell to Cash' via API. Trade queued for Composer execution window." if is_live else "Bypassed (Dry Run Mode)"
 
     payload = {
         "embeds": [
@@ -401,26 +376,10 @@ def send_discord_alert(
                 "color": color,
                 "fields": [
                     {"name": "Symphony", "value": symphony_name, "inline": True},
-                    {
-                        "name": "Exit Return",
-                        "value": f"{current_return:.2f}%",
-                        "inline": True,
-                    },
-                    {
-                        "name": "High Water Mark",
-                        "value": f"{high_water_mark:.2f}%",
-                        "inline": True,
-                    },
-                    {
-                        "name": "Stop Level",
-                        "value": f"{stop_trigger_level:.2f}%",
-                        "inline": True,
-                    },
-                    {
-                        "name": "MC Probability",
-                        "value": f"{prob_beating:.1f}%",
-                        "inline": True,
-                    },
+                    {"name": "Exit Return", "value": f"{current_return:.2f}%", "inline": True},
+                    {"name": "High Water Mark", "value": f"{high_water_mark:.2f}%", "inline": True},
+                    {"name": "Stop Level", "value": f"{stop_trigger_level:.2f}%", "inline": True},
+                    {"name": "MC Probability", "value": f"{prob_beating:.1f}%", "inline": True},
                     {"name": "Action Taken", "value": action_text, "inline": False},
                 ],
                 "footer": {"text": "Alpha Bot • Hybrid Trailing Stop"},
@@ -431,7 +390,6 @@ def send_discord_alert(
 
 
 def fetch_alpaca_history(tickers, current_date_str):
-    """Fetches historical data from Alpaca."""
     if "SPY" not in tickers:
         tickers.append("SPY")
 
@@ -447,7 +405,7 @@ def fetch_alpaca_history(tickers, current_date_str):
         except json.JSONDecodeError:
             pass
 
-    print(f"Fetching 3-year history from Alpaca for Monte Carlo " f"({len(tickers)} tickers)...")
+    print(f"Fetching 3-year history from Alpaca for Monte Carlo ({len(tickers)} tickers)...")
     start_date = (datetime.now() - timedelta(days=365 * 3 + 30)).strftime("%Y-%m-%dT00:00:00Z")
     headers = get_alpaca_headers()
     historical_data = {}
@@ -456,15 +414,11 @@ def fetch_alpaca_history(tickers, current_date_str):
     for i in range(0, len(tickers_list), batch_size):
         batch = tickers_list[i : i + batch_size]
         symbol_string = ",".join(batch)
-        print(f"  -> Downloading batch {i // batch_size + 1}: " f"{len(batch)} tickers...")
+        print(f"  -> Downloading batch {i // batch_size + 1}: {len(batch)} tickers...")
 
         page_token = None
         while True:
-            url = (
-                f"https://data.alpaca.markets/v2/stocks/bars?"
-                f"symbols={symbol_string}&timeframe=1Day&"
-                f"start={start_date}&limit=10000&adjustment=split"
-            )
+            url = f"https://data.alpaca.markets/v2/stocks/bars?symbols={symbol_string}&timeframe=1Day&start={start_date}&limit=10000&adjustment=split"
             if page_token:
                 url += f"&page_token={page_token}"
 
@@ -477,9 +431,7 @@ def fetch_alpaca_history(tickers, current_date_str):
                         success = True
                         break
                     else:
-                        print(
-                            f"Alpaca API Error on batch (attempt {attempt+1}/{max_retries}): HTTP {response.status_code} - {response.text}"
-                        )
+                        print(f"Alpaca API Error on batch (attempt {attempt+1}/{max_retries}): HTTP {response.status_code}")
                 except requests.RequestException as e:
                     print(f"Alpaca API Request Exception (attempt {attempt+1}/{max_retries}): {e}")
                 time.sleep(2 * (attempt + 1))
@@ -511,14 +463,11 @@ def fetch_alpaca_history(tickers, current_date_str):
     print("  -> History download complete. Saving to daily cache.")
     try:
         with open(HISTORY_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "date": current_date_str,
-                    "tickers": tickers_list,
-                    "data": historical_data,
-                },
-                f,
-            )
+            json.dump({
+                "date": current_date_str,
+                "tickers": tickers_list,
+                "data": historical_data,
+            }, f)
     except OSError as e:
         print(f"  -> Failed to write cache: {e}")
 
@@ -526,13 +475,9 @@ def fetch_alpaca_history(tickers, current_date_str):
 
 
 def get_live_spy_data():
-    """Fetches the latest SPY return data."""
     start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%dT00:00:00Z")
     headers = get_alpaca_headers()
-    url = (
-        f"https://data.alpaca.markets/v2/stocks/bars?"
-        f"symbols=SPY&timeframe=1Day&start={start_date}&limit=10"
-    )
+    url = f"https://data.alpaca.markets/v2/stocks/bars?symbols=SPY&timeframe=1Day&start={start_date}&limit=10"
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -552,32 +497,26 @@ def get_live_vix():
     """Fetches live VIX index via Yahoo Finance, using a 15-minute local cache to prevent rate limits."""
     current_time = time.time()
     
-    # 1. Check local cache first
     if os.path.exists(VIX_CACHE_FILE):
         try:
             with open(VIX_CACHE_FILE, "r") as f:
                 cache = json.load(f)
-                # If cache is less than 15 minutes (900 seconds) old, use it
                 if current_time - cache.get("timestamp", 0) < 900:
                     return float(cache.get("vix_value", 20.0))
         except:
             pass
 
-    # 2. If cache is missing or expired, fetch fresh data
     url = "https://query2.finance.yahoo.com/v8/finance/chart/^VIX?interval=1d&range=1d"
     headers = {'User-Agent': 'Mozilla/5.0'}
-    vix_value = 20.0 # Default fallback
+    vix_value = 20.0 
     
     try:
         response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             vix_value = float(data['chart']['result'][0]['meta']['regularMarketPrice'])
-            
-            # Save the new value to cache
             with open(VIX_CACHE_FILE, "w") as f:
                 json.dump({"timestamp": current_time, "vix_value": vix_value}, f)
-                
     except Exception as e:
         print(f"  ⚠️ Error fetching VIX: {e}. Defaulting to Normal Regime or previous cache.")
         
@@ -588,7 +527,6 @@ def get_live_vix():
 # 4. MATH ENGINE: MONTE CARLO & VOLATILITY
 # ==========================================
 def run_monte_carlo(holdings, historical_data, spy_today_return):
-    """Runs monte carlo simulation based on historical data."""
     current_symphony_return = sum(
         (h.get("last_percent_change", 0.0) * 100.0) * h.get("allocation", 0.0)
         for h in holdings
@@ -629,7 +567,6 @@ def run_monte_carlo(holdings, historical_data, spy_today_return):
 
 
 def calculate_20d_vol(holdings, historical_data):
-    """Calculates the weighted 20-day standard deviation of a symphony's holdings."""
     valid_dates = sorted(list(historical_data.keys()))[-20:]
     if len(valid_dates) < 20:
         return 0.0
@@ -643,7 +580,6 @@ def calculate_20d_vol(holdings, historical_data):
             if ticker in historical_data[date]:
                 day_return += (historical_data[date][ticker].get("daily_ret", 0.0) * 100.0) * weight
             else:
-                # Fallback to SPY if specific ticker is missing on that historical day
                 spy_ret = historical_data[date].get("SPY", {}).get("daily_ret", 0.0)
                 day_return += (spy_ret * 100.0) * weight
         daily_returns.append(day_return)
@@ -654,38 +590,32 @@ def calculate_20d_vol(holdings, historical_data):
     return float(np.std(daily_returns))
 
 
+def get_current_et():
+    utc_now = datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        if 3 <= utc_now.month <= 11:
+            return utc_now - timedelta(hours=4)
+        return utc_now - timedelta(hours=5)
+
+
 # ==========================================
 # 5. MAIN EXECUTION LOOP
 # ==========================================
-def get_current_et():
-    """Gets the current time in ET, safely handling missing Windows tzdata."""
-    utc_now = datetime.now(timezone.utc)
-    try:
-        # pylint: disable=import-outside-toplevel
-        from zoneinfo import ZoneInfo
-
-        return datetime.now(ZoneInfo("America/New_York"))
-    except Exception:
-        # Fallback if tzdata is missing
-        if 3 <= utc_now.month <= 11:
-            return utc_now - timedelta(hours=4)  # EDT approx
-        return utc_now - timedelta(hours=5)  # EST approx
-
-
 def main():
     """Main execution entry point."""
     
-    # 1. Ensure absolute process exclusivity to prevent State Corruption
     if not acquire_lock():
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Overlap Detected: Previous minute is still executing (likely processing liquidations). Skipping...")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Overlap Detected. Skipping...")
         return
-
+    
     try:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Alpha Bot Waking Up...")
         mode_text = "LIVE EXECUTION (DANGER)" if LIVE_EXECUTION else "DRY RUN (SAFE)"
         print(f"MODE: {mode_text}")
 
-        # --- MARKET HOURS GATEKEEPER ---
         force_run = "--force" in sys.argv
         current_et = get_current_et()
 
@@ -699,17 +629,16 @@ def main():
 
         if not is_weekday or current_time < market_open or current_time > post_mortem_cutoff:
             if not force_run:
-                print(f"  -> Market closed or in Grace Period (ET: {current_et.strftime('%a %H:%M')}). Sleeping to conserve API limits...")
+                print(f"  -> Market closed or in Grace Period (ET: {current_et.strftime('%a %H:%M')}). Sleeping...")
                 return
             print("  -> Market closed, but --force flag detected! Bypassing gatekeeper...")
 
-        # --- COMPOSER REBALANCE BLACKOUT (STAGE 1 SNAPSHOT) ---
         if rebalance_blackout <= current_time < market_close:
             bot_state = load_state()
             generate_eod_snapshot(bot_state, current_et.strftime("%Y-%m-%d"), is_post_rebalance=False)
 
             if not force_run:
-                print(f"  -> 🛑 COMPOSER REBALANCE BLACKOUT (ET: {current_et.strftime('%H:%M')}). Pausing to prevent false triggers during Composer's end-of-day rebalance...")
+                print(f"  -> 🛑 COMPOSER REBALANCE BLACKOUT (ET: {current_et.strftime('%H:%M')}). Pausing...")
                 return
             print("  -> Rebalance blackout active, but --force flag detected! Bypassing...")
 
@@ -723,7 +652,6 @@ def main():
         current_date_str = current_et.strftime("%Y-%m-%d")
         current_time_str = current_et.strftime("%H:%M")
 
-        # WIPE STATE ON NEW DAY
         if bot_state.get("date") != current_date_str:
             print(f"  -> New trading day detected ({current_date_str} ET). Wiping old state and chart memory.")
             bot_state = {"date": current_date_str}
@@ -733,10 +661,8 @@ def main():
             chart_history = {"date": current_date_str, "symphonies": {}}
             save_chart_history(chart_history)
 
-        # --- LOGARITHMIC TIME DECAY RATIO CALCULATION ---
         m_open_dt = current_et.replace(hour=10, minute=30, second=0, microsecond=0)
         m_close_dt = current_et.replace(hour=16, minute=0, second=0, microsecond=0)
-
         total_trading_minutes = (m_close_dt - m_open_dt).total_seconds() / 60.0
         elapsed_minutes = (current_et - m_open_dt).total_seconds() / 60.0
 
@@ -758,7 +684,6 @@ def main():
                         all_tickers.add(alpaca_ticker)
                         holding["working_ticker"] = alpaca_ticker
 
-        # --- EOD POST-MORTEM SNAPSHOT STAGE 2 (16:00 - 16:05 ET) ---
         if market_close <= current_time <= post_mortem_cutoff:
             for account, symphonies in symphony_data_cache.items():
                 for sym in symphonies:
@@ -780,11 +705,9 @@ def main():
         if not historical_data:
             return
 
-        # Fetch Macro Environment Data
         spy_today = get_live_spy_data()
         vix_today = get_live_vix()
 
-        # Determine Market Regime based on VIX
         if vix_today < VIX_LOW_THRESHOLD:
             regime_mult = VIX_LOW_MULT
             regime_name = "LOW VOLATILITY"
@@ -810,7 +733,6 @@ def main():
                 for h in holdings:
                     h["ticker"] = h.get("working_ticker", h.get("ticker"))
 
-                # --- INIT BOT STATE & BACKWARD COMPATIBILITY ---
                 profiles = get_latest_post_mortem_profiles()
                 symphony_holdings = [h.get("ticker") for h in holdings]
                 symphony_tick_threshold = 2
@@ -842,7 +764,6 @@ def main():
                     bot_state[symphony_id]["tick_threshold"] = symphony_tick_threshold
                     bot_state[symphony_id]["eod_vol_ratio"] = symphony_eod_ratio
 
-                # Tracking previous state to determine Chart Events
                 prev_armed = bot_state[symphony_id].get("armed", False)
                 prev_tp_armed = bot_state[symphony_id].get("tp_armed", False)
                 prev_triggered = bot_state[symphony_id].get("triggered", False)
@@ -856,19 +777,16 @@ def main():
                 if "mc_history" not in bot_state[symphony_id]:
                     bot_state[symphony_id]["mc_history"] = []
 
-                # Update High Water Mark
                 if current_return > bot_state[symphony_id]["high_water_mark"] and not bot_state[symphony_id]["triggered"]:
                     bot_state[symphony_id]["high_water_mark"] = current_return
 
                 high_water_mark = bot_state[symphony_id]["high_water_mark"]
 
-                # --- 1. MC Probability & Volatility Engine ---
                 prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
                 symphony_vol = calculate_20d_vol(holdings, historical_data)
 
                 decay_curve = base_decay_curve
 
-                # --- INJECT EOD RELIEF VALVE HERE ---
                 if current_et.hour == 15 and current_et.minute >= 30:
                     eod_ratio = bot_state[symphony_id].get("eod_vol_ratio", 1.0)
                     if eod_ratio > 1.2:
@@ -876,7 +794,6 @@ def main():
                         decay_curve = decay_curve * (1.0 - relief_factor)
                         print(f"  -> [{symphony_name}] Applied EOD Relief Valve. Relaxing squeeze by {relief_factor*100:.1f}%")
 
-                # --- ASYMMETRIC PARABOLIC SQUEEZE LOGIC ---
                 velocity_squeeze = 1.0
                 if symphony_vol > 0.5:
                     velocity = high_water_mark / symphony_vol
@@ -885,7 +802,6 @@ def main():
                         velocity_squeeze = 1.0 - (excess * MAX_PARABOLIC_SQUEEZE)
                         print(f"  ⚡ [{symphony_name[:20]}] PARABOLIC SQUEEZE: {velocity_squeeze:.2f}x (HWM: {high_water_mark:.1f}% | Vol: {symphony_vol:.1f}%)")
 
-                # --- Vol-Adjusted Dynamic Stop with VIX Regime ---
                 if symphony_vol > 0:
                     morning_stop = max(symphony_vol * regime_mult, MIN_MULTIPLIER_FLOOR)
                     afternoon_stop = max(symphony_vol * (regime_mult * 0.33), MIN_MULTIPLIER_FLOOR * 0.5)
@@ -893,10 +809,8 @@ def main():
                     morning_stop = TRAILING_STOP_PCT
                     afternoon_stop = ENDING_STOP_PCT
 
-                # Apply Time Decay + Velocity Squeeze
                 dynamic_trailing_stop = (morning_stop - ((morning_stop - afternoon_stop) * decay_curve)) * velocity_squeeze
 
-                # --- 2. Arming & Disarming Mechanism ---
                 should_arm = False
                 arm_reason = ""
                 effective_loss_threshold = max(LOSS_ARM_PCT, symphony_vol)
@@ -918,7 +832,6 @@ def main():
                         bot_state[symphony_id]["below_stop_count"] = 0
                         print(f"  *** {symphony_name} DISARMED (Conditions Recovered) ***")
 
-                # --- 3. Strangler (SMA + Multiplier) ---
                 bot_state[symphony_id]["mc_history"].append(prob_beating)
                 if len(bot_state[symphony_id]["mc_history"]) > 5:
                     bot_state[symphony_id]["mc_history"].pop(0)
@@ -932,7 +845,6 @@ def main():
                 else:
                     active_trailing_stop = dynamic_trailing_stop
 
-                # --- 4. Dynamic Trailing Stop & Vol-Scaled Breakeven Lock Math ---
                 safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
                 base_stop_level = safe_hwm - active_trailing_stop
 
@@ -948,7 +860,6 @@ def main():
                 if bot_state[symphony_id]["triggered"]:
                     stop_trigger_level = -999.0
 
-                # --- 4.5 Dynamic Tick Confirmation Trailing Stop Logic ---
                 is_trailing_stop_hit = False
                 if bot_state[symphony_id]["armed"] and not bot_state[symphony_id]["triggered"]:
                     if current_return <= stop_trigger_level:
@@ -963,7 +874,6 @@ def main():
                             print(f"  ✅ {symphony_name[:35]} recovered above stop. Confirmation reset.")
                         bot_state[symphony_id]["below_stop_count"] = 0
 
-                # --- 4.6 Take-Profit Smart Trailing Exit Math (With 2-Tick Confirmation) ---
                 tp_triggered_now = False
                 if prob_beating < TAKE_PROFIT_MC_PCT:
                     if not bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
@@ -998,7 +908,6 @@ def main():
                 bot_state[symphony_id]["symphony_vol"] = symphony_vol
                 bot_state[symphony_id]["velocity_squeeze"] = velocity_squeeze
                 
-                # Store current holdings so 16:00 ET loop knows what to carry over into tomorrow
                 bot_state[symphony_id]["current_holdings"] = [
                     {"ticker": h.get("ticker"), "allocation": h.get("allocation", 0.0)}
                     for h in holdings
@@ -1006,7 +915,6 @@ def main():
 
                 save_state(bot_state)
 
-                # --- Chart Visualization Logging ---
                 chart_event = None
                 if is_trailing_stop_hit or tp_triggered_now:
                     chart_event = "Triggered"
@@ -1034,14 +942,10 @@ def main():
                     "mc_prob": prob_beating,
                 })
 
-                # --- 5. Execution Check & Optimistic Saving ---
                 if is_trailing_stop_hit or tp_triggered_now:
                     reason = "Take-Profit" if tp_triggered_now else "Trailing Stop"
                     print(f"  🚨 {reason.upper()} HIT FOR {symphony_name} 🚨")
 
-                    # -------------------------------------------------------------
-                    # OPTIMISTIC STATE SAVE: Instantly update file before API sleep
-                    # -------------------------------------------------------------
                     bot_state[symphony_id]["armed"] = False
                     bot_state[symphony_id]["tp_armed"] = False
                     bot_state[symphony_id]["triggered"] = True
@@ -1063,7 +967,6 @@ def main():
                             send_discord_alert(symphony_name, current_return, prob_beating, stop_trigger_level, safe_hwm, LIVE_EXECUTION, exit_reason=reason)
                         else:
                             print("     !!! EXECUTION FAILED. Reverting state to retry next loop !!!")
-                            # Rollback state so it tries again next minute
                             bot_state = load_state()
                             bot_state[symphony_id]["triggered"] = False
                             bot_state[symphony_id]["armed"] = not tp_triggered_now
@@ -1078,7 +981,6 @@ def main():
         save_chart_history(chart_history)
 
     finally:
-        # 3. Always release lock so the next minute can process, even if there's an error
         release_lock()
 
 
