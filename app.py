@@ -29,12 +29,14 @@ def trigger_alpha_bot(force=False):
 
 
 # --- 2. Background Scheduler ---
+def threaded_trigger():
+    """Launches the bot execution in a background thread to prevent scheduler blocking."""
+    threading.Thread(target=trigger_alpha_bot, daemon=True).start()
+
 def run_scheduler():
     """Runs the scheduler every 1-minute to support Multi-Tick confirmations."""
-    # Run the execution logic every minute exactly on the 00 second mark.
-    # The time-based gatekeeper in alpha_bot_execution.py handles blocking
-    # executions outside of market hours and the new 10:30 AM ET grace period.
-    schedule.every().minute.at(":00").do(trigger_alpha_bot, force=False)
+    # Use the threaded_trigger so the clock never falls behind if execution takes >60 seconds.
+    schedule.every().minute.at(":00").do(threaded_trigger)
 
     while True:
         schedule.run_pending()
@@ -200,7 +202,11 @@ def get_settings():
             "TAKE_PROFIT_MC_PCT": env_vars.get("TAKE_PROFIT_MC_PCT", "5.0"),
             "LOSS_ARM_PCT": env_vars.get("LOSS_ARM_PCT", "1.5"),
             "MAX_SQUEEZE_FLOOR": env_vars.get("MAX_SQUEEZE_FLOOR", "0.20"),
-            "BASE_ATR_MULTIPLIER": env_vars.get("BASE_ATR_MULTIPLIER", "2.0"),
+            "VIX_LOW_THRESHOLD": env_vars.get("VIX_LOW_THRESHOLD", "15.0"),
+            "VIX_HIGH_THRESHOLD": env_vars.get("VIX_HIGH_THRESHOLD", "25.0"),
+            "VIX_LOW_MULT": env_vars.get("VIX_LOW_MULT", "1.5"),
+            "VIX_MID_MULT": env_vars.get("VIX_MID_MULT", "2.0"),
+            "VIX_HIGH_MULT": env_vars.get("VIX_HIGH_MULT", "2.5"),
             "MIN_MULTIPLIER_FLOOR": env_vars.get("MIN_MULTIPLIER_FLOOR", "0.5"),
             "TRAILING_STOP_PCT": env_vars.get("TRAILING_STOP_PCT", "1.5"),
             "ENDING_STOP_PCT": env_vars.get("ENDING_STOP_PCT", "0.5"),
@@ -217,6 +223,7 @@ def save_settings():
     if not env_file:
         env_file = ".env"
 
+    # BASE_ATR_MULTIPLIER replaced with the 5 VIX Regime filters
     allowed_keys = [
         "LIVE_EXECUTION",
         "COMPOSER_KEY_ID",
@@ -229,7 +236,11 @@ def save_settings():
         "TAKE_PROFIT_MC_PCT",
         "LOSS_ARM_PCT",
         "MAX_SQUEEZE_FLOOR",
-        "BASE_ATR_MULTIPLIER",
+        "VIX_LOW_THRESHOLD",
+        "VIX_HIGH_THRESHOLD",
+        "VIX_LOW_MULT",
+        "VIX_MID_MULT",
+        "VIX_HIGH_MULT",
         "MIN_MULTIPLIER_FLOOR",
         "TRAILING_STOP_PCT",
         "ENDING_STOP_PCT",
