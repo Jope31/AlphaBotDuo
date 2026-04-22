@@ -1,8 +1,11 @@
-# **🤖 AlphaBot: Multi-Factor Volatility Engine (v3.0)**
+# **🤖 AlphaBot: Multi-Factor Volatility Engine (v3.5)**
 
 AlphaBot is a high-performance quantitative risk-management framework and automated execution engine designed to interface directly with **Composer.trade** portfolios. By synthesizing real-time market sentiment (VIX), intraday time decay, and individual asset velocity, AlphaBot acts as an intelligent circuit breaker—protecting capital during systemic breakdowns while aggressively locking in gains during parabolic runs.
 
 AlphaBot (v3.0) marks a fundamental shift from a reactive script to a **context-aware risk engine**, built for high-reliability execution across large, complex portfolios.
+
+AlphaBot (v3.5) introduces a **High-Concurrency SQLite Backend**, moving away from fragmented JSON files to provide a robust, database-driven "single source of truth."
+
 
 ## **🌟 The 3-Tier Execution Logic**
 
@@ -30,14 +33,15 @@ This layer acts as an **Emergency Brake** for vertical moves. It monitors the Hi
 * **Trigger:** If HWM > 2.0x Daily $\sigma$, the asset is flagged as "Parabolic."  
 * **Action:** A velocity squeeze multiplier (up to 50% reduction) is applied instantly. This yanks the stop upward to hug the price action during spikes, ensuring sudden reversals result in locked top-tier profits.
 
-## **⚡ High-Reliability Performance Architecture**
+## ⚡ High-Reliability Performance Architecture (v3.5 Updates)
 
-AlphaBot is engineered to handle large portfolios where multiple symphonies may trigger simultaneously, requiring sequential API execution.
+AlphaBot is engineered for zero-collision execution, ensuring that the Japan-based user can sleep soundly while the bot manages US market hours.
 
-* **Async Threaded Scheduler:** The 1-minute heartbeat is detached from the execution logic. Even if liquidation takes >60 seconds, the scheduler never misses a tick.  
-* **Lockfile Exclusivity:** An ```alpha_bot.lock``` mechanism prevents session overlapping and potential ```bot_state.json``` corruption.  
-* **Optimistic State Saving:** During a trigger, AlphaBot updates local state and the Dashboard **instantly** before initiating the 3-second API calls. This ensures real-time visibility and prevents duplicate orders.  
-* **Dynamic Multi-Tick Confirmation:** To filter out "flash-crash" noise or bid/ask spread glitches, a symphony must breach its stop level for multiple consecutive 1-minute runs (configured via ```tick_threshold```) before liquidation.
+* **SQLite Atomic Persistence**: All state management, chart history, and VIX caching are consolidated into ```alphabot.db```. This eliminates "Atomic Swap" race conditions and file-locking errors.  
+* **Zero-IO Overlap**: The Flask Control Center and the Execution Engine utilize SQLite's native transaction handling. The UI remains responsive even during heavy Monte Carlo simulations.  
+* **Smart Initialization UI**: A new "Bot State Initializing" screen with a centered loading animation ensures the user knows exactly when the bot is warming up its first database entry.  
+* **Async Threaded Scheduler**: The 1-minute heartbeat is detached from the execution logic, ensuring that API latency never causes the clock to fall behind.  
+* **Dynamic Multi-Tick Confirmation**: Signals must breach stop levels for multiple consecutive 1-minute runs (via ```tick_threshold```) to filter out flash-crash noise.
 
 ## **⚙️ Environment Configuration**
 
