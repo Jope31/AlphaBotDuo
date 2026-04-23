@@ -171,6 +171,11 @@ def get_settings():
         "TRAILING_STOP_PCT": env_vars.get("TRAILING_STOP_PCT", "1.5"),
         "ENDING_STOP_PCT": env_vars.get("ENDING_STOP_PCT", "0.5"),
         "BREAKEVEN_ACTIVATION_PCT": env_vars.get("BREAKEVEN_ACTIVATION_PCT", "2.0"),
+        "VWAP_CROSS_HWM_PCT": env_vars.get("VWAP_CROSS_HWM_PCT", "1.0"),
+        "PARABOLIC_VELOCITY_THRESHOLD": env_vars.get("PARABOLIC_VELOCITY_THRESHOLD", "2.0"),
+        "MAX_PARABOLIC_SQUEEZE": env_vars.get("MAX_PARABOLIC_SQUEEZE", "0.50"),
+        "SIMULATION_PATHS": env_vars.get("SIMULATION_PATHS", "5000"),
+        "NEIGHBOR_K": env_vars.get("NEIGHBOR_K", "150"),
     })
 
 @app.route("/api/settings", methods=["POST"])
@@ -187,6 +192,8 @@ def save_settings():
         "TAKE_PROFIT_MC_PCT", "LOSS_ARM_PCT", "MAX_SQUEEZE_FLOOR", "VIX_LOW_THRESHOLD",
         "VIX_HIGH_THRESHOLD", "VIX_LOW_MULT", "VIX_MID_MULT", "VIX_HIGH_MULT",
         "MIN_MULTIPLIER_FLOOR", "TRAILING_STOP_PCT", "ENDING_STOP_PCT", "BREAKEVEN_ACTIVATION_PCT",
+        "VWAP_CROSS_HWM_PCT", "PARABOLIC_VELOCITY_THRESHOLD", "MAX_PARABOLIC_SQUEEZE",
+        "SIMULATION_PATHS", "NEIGHBOR_K"
     ]
 
     try:
