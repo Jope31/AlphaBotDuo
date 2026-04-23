@@ -1,145 +1,119 @@
-# **🤖 AlphaBot: Multi-Factor Volatility Engine (v3.5)**
+# **🤖 AlphaBot: Multi-Factor Volatility Engine (v4.0)**
 
-AlphaBot is a high-performance quantitative risk-management framework and automated execution engine designed to interface directly with **Composer.trade** portfolios. By synthesizing real-time market sentiment (VIX), intraday time decay, and individual asset velocity, AlphaBot acts as an intelligent circuit breaker—protecting capital during systemic breakdowns while aggressively locking in gains during parabolic runs.
+AlphaBot is a high-performance quantitative risk-management framework and automated execution engine designed to interface directly with **Composer.trade** portfolios. By synthesizing real-time market sentiment (```VIX```), intraday time decay, structural volume support (True VWAP), and individual asset velocity, AlphaBot acts as an intelligent circuit breaker—protecting capital during systemic breakdowns while aggressively locking in gains during parabolic runs.
 
-AlphaBot (v3.0) marks a fundamental shift from a reactive script to a **context-aware risk engine**, built for high-reliability execution across large, complex portfolios.
+AlphaBot (v4.0) marks the transition from a static execution script to a **Self-Optimizing Risk Engine**. It features a High-Concurrency SQLite Backend for robust state management and a daily Walk-Forward Optimization engine that continuously adapts the bot's defensive parameters to shifting market regimes.
 
-AlphaBot (v3.5) introduces a **High-Concurrency SQLite Backend**, moving away from fragmented JSON files to provide a robust, database-driven "single source of truth."
+## **🌟 Core Defensive Architecture**
 
-
-## **🌟 The 3-Tier Execution Logic**
-
-AlphaBot no longer uses a "one-size-fits-all" trailing stop. It layers three distinct forces to calculate the optimal stop distance every minute:
+AlphaBot no longer uses a "one-size-fits-all" trailing stop. It layers multiple distinct mathematical forces to dynamically manage risk every minute of the trading day:
 
 ### **1. The Macro Foundation (VIX Regime Filter)**
 
-The bot determines the "Market Weather" using the **VIX Index** (cached 15-minute updates). This sets the baseline multiplier for your safety net:
+The bot determines the "Market Weather" using the **VIX Index**. Instead of a static baseline, it sets your trailing stop multiplier dynamically based on current market fear:
 
-* **Low Volatility (<15 VIX):** Clamps stops tight to prevent "slow bleed" losses.  
-* **Normal Regime (15-25 VIX):** Balanced sensitivity for standard market conditions.  
-* **Crisis Regime (>25 VIX):** Widens stops to allow for the systemic noise inherent in high-fear markets, preventing premature "whipsaw" exits.
+* **Low Volatility (<15 ```VIX```):** Clamps stops tight (```VIX_LOW_MULT```) to prevent "slow bleed" losses in sideways chop.  
+* **Normal Regime (15-25 ```VIX```):** Balanced sensitivity (```VIX_MID_MULT```) for standard market conditions.  
+* **Crisis Regime (>25 ```VIX```):** Widens stops (```VIX_HIGH_MULT```) to allow for the systemic noise inherent in high-fear markets, preventing you from being shaken out by standard intraday volatility.
 
-### **2. The Intraday Strangler (Time Decay)**
+### **2. Monte Carlo Probabilistic Arming**
 
-The system recognizes that volatility typically increases toward the end of the session. It utilizes a **Logarithmic Decay Curve** to tighten the stop from 10:30 AM to 3:54 PM ET.
+Instead of arbitrary entry points, AlphaBot uses a localized Monte Carlo engine. It compares a symphony’s intraday return against 5,000 simulated paths generated from 3 years of historical correlation and today’s live market momentum (```SPY``` proxy). When the probability of the symphony continuing to beat its simulated peers falls below ```TRIGGER_THRESHOLD_PCT```, the defensive trailing stop is "Armed."
 
-* **Morning:** Wide stops allow for initial price discovery.  
-* **Afternoon:** The stop "strangles" the position, collapsing wiggle room to lock in the day's gains before the final closing auction.
+### **3. Logarithmic Time-Decay Trailing Stop**
 
-### **3. The Micro Override (Asymmetric Parabolic Squeeze)**
+AlphaBot acknowledges that market volatility often increases toward the close. It calculates a trailing stop that tightens throughout the day based on a logarithmic decay curve:
 
-This layer acts as an **Emergency Brake** for vertical moves. It monitors the High Water Mark (HWM) relative to the symphony's 20-day volatility ($\sigma$).
+* **Morning:** The stop is wider (starting at ```TRAILING_STOP_PCT```), allowing the primary trend to establish.  
+* **Afternoon:** The stop aggressively "strangles" the price, narrowing toward ```ENDING_STOP_PCT``` to ensure that morning gains do not bleed out during End-of-Day profit-taking.
 
-* **Trigger:** If HWM > 2.0x Daily $\sigma$, the asset is flagged as "Parabolic."  
-* **Action:** A velocity squeeze multiplier (up to 50% reduction) is applied instantly. This yanks the stop upward to hug the price action during spikes, ensuring sudden reversals result in locked top-tier profits.
+### **4. True VWAP (Volume Weighted Average Price) Defense**
 
-## ⚡ High-Reliability Performance Architecture (v3.5 Updates)
+This feature acts as a structural momentum backstop. The bot calculates the True VWAP for every individual holding within a symphony minute-by-minute. If a symphony achieves a High Water Mark (HWM) over ```VWAP_CROSS_HWM_PCT``` but its aggregate, allocation-weighted price falls below VWAP support for three consecutive minutes, the bot triggers an immediate exit, bypassing standard percentage drops to exit on fundamental momentum failure.
 
-AlphaBot is engineered for zero-collision execution, ensuring that the Japan-based user can sleep soundly while the bot manages US market hours.
+### **5. Asymmetric Parabolic Squeeze**
 
-* **SQLite Atomic Persistence**: All state management, chart history, and VIX caching are consolidated into ```alphabot.db```. This eliminates "Atomic Swap" race conditions and file-locking errors.  
-* **Zero-IO Overlap**: The Flask Control Center and the Execution Engine utilize SQLite's native transaction handling. The UI remains responsive even during heavy Monte Carlo simulations.  
-* **Smart Initialization UI**: A new "Bot State Initializing" screen with a centered loading animation ensures the user knows exactly when the bot is warming up its first database entry.  
-* **Async Threaded Scheduler**: The 1-minute heartbeat is detached from the execution logic, ensuring that API latency never causes the clock to fall behind.  
-* **Dynamic Multi-Tick Confirmation**: Signals must breach stop levels for multiple consecutive 1-minute runs (via ```tick_threshold```) to filter out flash-crash noise.
+When a symphony undergoes a "vertical" run, the bot calculates its **Velocity Ratio** (HWM divided by rolling 20-day volatility). If this ratio exceeds the ```PARABOLIC_VELOCITY_THRESHOLD```, the bot applies an asymmetric squeeze, reducing the allowable drawdown percentage by up to ```MAX_PARABOLIC_SQUEEZE``` to tightly trap the peak.
 
-## **⚙️ Environment Configuration**
+### **6. Smart Take-Profit (TP)**
 
-AlphaBot is tuned via the ```.env``` file. The following variables define the Volatility Engine:
+If a symphony experiences an exceptional gain that drops its Monte Carlo "beat probability" to extreme lows (below ```TAKE_PROFIT_MC_PCT```), a highly sensitive Take-Profit trap is armed. If momentum stalls, it exits immediately to capture the blow-off top.
 
-### **Macro (VIX) Settings**
+## **🧠 The EOD Autotuner (Walk-Forward Optimization)**
 
-* ```VIX_LOW_THRESHOLD``` / ```VIX_HIGH_THRESHOLD```: Defined boundaries for market regimes (Default: 15 / 25).  
-* ```VIX_LOW_MULT``` / ```VIX_MID_MULT``` / ```VIX_HIGH_MULT```: Multipliers applied to daily volatility (ATR) for each regime.
+At 4:00 PM ET, AlphaBot stops trading and transitions into an optimization engine.
 
-### **Monte Carlo & Squeeze Settings**
+1. **The Archive:** It saves the exact minute-by-minute price, volume, and probability data for every symphony into a permanent SQLite archive.  
+2. **The Grid Search:** It pulls a rolling 5-day window of this data and replays it against **26,244** unique combinations of the bot's strategy variables.  
+3. **Guard Alpha:** It scores every combination based on **Guard Alpha**—the exact percentage of capital that would have been saved by the bot's exits compared to passively holding to the close.  
+4. **Self-Correction:** The bot finds the most mathematically optimal variable setup for the current market environment, **automatically overwrites the ```.env``` file**, and pushes a 2D Heatmap of the parameter space to Discord for visual review.
 
-* ```TRIGGER_THRESHOLD_PCT```: MC Probability required to arm the trailing stop (Def: 15).  
-* ```TAKE_PROFIT_MC_PCT```: MC Probability required to arm the aggressive "Smart TP" trap (Def: 5).  
-* ```MAX_SQUEEZE_FLOOR```: The absolute tightest a stop can squeeze (Def: 0.20, or 20% of its base width).  
-* ```PARABOLIC_VELOCITY_THRESHOLD```: Multiple of daily $\sigma$ required to trigger the parabolic override (Def: 2.0).
+## **⚙️ Variable Glossary**
 
-### **Standard Guardrails**
+Configure these in your local dashboard or ```.env``` file. (Note: The Autotuner will optimize the primary Strategy variables nightly).
 
-* ```LOSS_ARM_PCT```: Vol-scaled flash crash floor.  
-* ```BREAKEVEN_ACTIVATION_PCT```: Percentage at which the stop floor locks at 0.0% to protect the principal.
+### **API & Core**
 
-## **Gemini "Quant Analyst" Integration**
+* ```LIVE_EXECUTION```: Boolean (True/False). Set to False to simulate trades safely.  
+* ```COMPOSER_KEY_ID``` / ```COMPOSER_SECRET```: Composer API credentials.  
+* ```ACCOUNT_UUIDS```: Comma-separated Composer account IDs.  
+* ```ALPACA_KEY``` / ```ALPACA_SECRET```: Alpaca Market Data API credentials.  
+* ```DISCORD_WEBHOOK_URL```: (Optional) URL for Live Alerts, EOD Snapshots, and Autotune Heatmaps.
 
-The ```post_mortem_YYYY-MM-DD.json``` file is specifically structured to be analyzed by a Large Language Model (like Google Gemini Gems).
+### **Strategy & Defense**
 
-**How to set up your AI Analyst:**
+* ```TRIGGER_THRESHOLD_PCT```: The MC probability threshold (e.g., 15.0%) that "Arms" the standard trailing stop.  
+* ```TAKE_PROFIT_MC_PCT```: The extreme MC probability threshold (e.g., 5.0%) that arms the Smart TP.  
+* ```LOSS_ARM_PCT```: A hard floor; if a symphony drops below this % (or its daily vol), it arms instantly.  
+* ```BREAKEVEN_ACTIVATION_PCT```: The HWM % required to permanently lock the stop-loss above 0.0%.  
+* ```MAX_SQUEEZE_FLOOR```: The maximum limit applied to the dynamic stop-loss during a high-conviction strangle.  
+* ```VWAP_CROSS_HWM_PCT```: The minimum HWM required before the VWAP support breakdown defense is activated.  
+* ```MIN_MULTIPLIER_FLOOR```: The absolute minimum distance the stop is allowed to sit from the current price.
 
-1. Create a new custom Persona/Gem in Gemini.  
-2. Name it "AlphaBot Quant Analyst".  
-3. Paste the following into the system instructions:
-```
-You are the AlphaBot Quant Analyst. Your job is to analyze daily execution logs and EOD snapshots from the AlphaBot risk-management system, and recommend parameter tuning for the next trading day.
-AlphaBot has recently been upgraded to a Multi-Factor Volatility Engine. You must understand how its 3-tier profit-lock system works to accurately diagnose trades:
-The 3-Tier Execution Logic
-The Macro Foundation (VIX Regime): The bot fetches the VIX every 15 minutes. It uses this to set the base width of the trailing stop for all assets.
-If VIX < VIX_LOW_THRESHOLD, it applies VIX_LOW_MULT.
-If VIX > VIX_HIGH_THRESHOLD, it applies VIX_HIGH_MULT.
-Otherwise, it applies VIX_MID_MULT.
-The Intraday Strangler (Time Decay): As the day progresses from 10:30 AM to 4:00 PM, the stop logarithmically tightens from the morning width down to a fraction of its size.
-The Micro Override (Parabolic Squeeze): If an individual asset's High Water Mark (HWM) exceeds 2.0x its normal daily volatility, the asset is considered "Parabolic". The bot applies a fractional multiplier (up to 50% reduction) to the stop distance, violently tightening the stop to lock in the outlier gain.
-Interpreting the Logs
-Macro Environment: Look for the log Macro Environment: SPY X% | VIX Y (Regime). This tells you the baseline sensitivity for the day.
-Parabolic Events: Look for logs starting with ⚡ [SymphonyName] PARABOLIC SQUEEZE: 0.XXx. If a trade was stopped out shortly after this, it was a successful profit-lock of a vertical move, not a premature whipsaw.
-Arming/Disarming: Look at the MC Probability. If it dropped below TRIGGER_THRESHOLD_PCT, the bot armed. If it dropped below TAKE_PROFIT_MC_PCT, it armed the smart TP.
-Your Tuning Mandate
-When recommending parameter changes, you no longer tune a static ATR multiplier. Instead, you must tune the Regime Matrix. You are authorized to recommend changes to the following environment variables:
-VIX_LOW_THRESHOLD / VIX_HIGH_THRESHOLD
-VIX_LOW_MULT / VIX_MID_MULT / VIX_HIGH_MULT
-TRIGGER_THRESHOLD_PCT
-TAKE_PROFIT_MC_PCT
-LOSS_ARM_PCT
-MAX_SQUEEZE_FLOOR
-TRAILING_STOP_PCT / ENDING_STOP_PCT
-When you provide your daily briefing, analyze whether stops were hit because the VIX Regime Multiplier was too tight for normal noise, or if they were hit because the Parabolic Squeeze correctly trapped a vertical run. Adjust the matrix accordingly.
-```
-**Daily Workflow:** Simply drop the generated JSON file into the chat at 4:05 PM ET and provide a prompt like, "Tell me how I did today". The AI will provide a complete statistical breakdown and parameter tuning advice for tomorrow.
+### **Volatility Regimes & Parabolic Scaling**
 
+* ```VIX_LOW_MULT```: The multiplier applied to volatility when ```VIX``` is < 15 (Default: 1.5).  
+* ```VIX_MID_MULT```: The multiplier applied when ```VIX``` is 15-25 (Default: 2.0).  
+* ```VIX_HIGH_MULT```: The multiplier applied when ```VIX``` is > 25 (Default: 2.5).  
+* ```PARABOLIC_VELOCITY_THRESHOLD```: The ratio of HWM to Volatility that classifies a run as "parabolic."  
+* ```MAX_PARABOLIC_SQUEEZE```: The maximum % reduction applied to the stop distance during a parabolic move.
 
-## **⚙️ Environment Variables**
+### **Engine Fallbacks & Calculators**
 
-* ```LIVE_EXECUTION``` *(Default: False)* - Master safety switch. When False, AlphaBot operates in a Dry Run mode, logging logic and sending Discord alerts without executing API trades.  
-* ```TRIGGER_THRESHOLD_PCT``` *(Default: 15.0)* - The Monte Carlo probability required to "arm" the trailing stop logic.  
-* ```TAKE_PROFIT_MC_PCT``` *(Default: 5.0)* - The extreme top-percentile Monte Carlo probability required to arm the Take-Profit trap.  
-* ```MAX_SQUEEZE_FLOOR``` *(Default: 0.20)* - The maximum amount the "Strangler" can tighten a stop by 4:00 PM (e.g., tightens to 20% of its original distance).  
-* ```LOSS_ARM_PCT``` *(Default: 1.5)* - The hard volatility floor percentage to arm the stop during a sudden breakdown.  
-* ```BASE_ATR_MULTIPLIER``` *(Default: 2.0)* - The multiplier applied to the asset's 20-day volatility to calculate the initial morning stop distance.  
-* ```TRAILING_STOP_PCT``` *(Default: 1.5)* - The fallback trailing stop percentage.  
-* ```BREAKEVEN_ACTIVATION_PCT``` *(Default: 2.0)* - The profit percentage required to lock the trailing stop at ```0.0%```, scaled dynamically against daily volatility.
+* ```TRAILING_STOP_PCT```: Fallback starting stop percentage if historical volatility data is unavailable.  
+* ```ENDING_STOP_PCT```: Fallback ending stop percentage if historical volatility data is unavailable.  
+* ```SIMULATION_PATHS```: The number of paths generated for Monte Carlo analysis (Default: 5000).  
+* ```NEIGHBOR_K```: The number of historical "nearest neighbor" days used to seed MC simulations (Default: 150).
 
 ## **🚀 Setup & Installation**
 
-1. **Clone the Repository:**  
-```
-   git clone https://github.com/Jope31/AlphaBot.git  
+1. **Clone the Repository:**
+```   
+   git clone https://github.com/Jope31/AlphaBot.git
    cd AlphaBot
 ```
 
 2. **Install Dependencies:**
-```
-   pip install flask python-dotenv requests numpy schedule pandas alpaca-trade-api
+```  
+pip install flask python-dotenv requests numpy schedule pandas alpaca-trade-api matplotlib seaborn
 ```
 
-3. **Configure Environment:** Create a ```.env``` file in the root directory and populate it with the variables listed in the Environment section above (including your Composer, Alpaca, and Discord API keys).  
+3. **Configure Environment:** Create a ```.env``` file in the root directory and populate it with your API keys. The mathematical variables will be generated upon first launch.  
 
 4. **Launch the Control Center:**
 ```
-   python app.py
+python app.py
 ```
-   
-5. **Access Dashboard**: Open ```http://localhost:5000```. The bot will automatically initialize the SQLite database on its first run.
 
-## 🕒 Scheduling Details
+5. **Access Dashboard**:  
+   Open ```http://localhost:5000```. The bot will automatically initialize the SQLite database on its first run.
+
+## **🕒 Scheduling Details**
 
 AlphaBot utilizes a background schedule thread running via ```app.py```.
 
 * **10:30 AM ET Grace Period:** AlphaBot ignores the chaotic opening auction, beginning evaluations once the "Morning Noise" settles.  
 * **3:54 PM ET Rebalance Blackout:** To prevent API collisions during Composer's rebalancing window, AlphaBot automatically ceases all execution actions 6 minutes before the close.  
-* **Guard Alpha Snapshots:** Daily post-mortems calculate "Guard Alpha"—the exact capital saved by AlphaBot compared to a passive "Hold to EOD" strategy.
+* **4:00 PM ET EOD Processing:** AlphaBot locks final Shadow Returns, computes Guard Alpha, pushes the daily post-mortem to Discord, and begins the Walk-Forward Autotuning Grid Search.
 
-**Disclaimer: AlphaBot is an automated execution tool. Algorithmic trading carries significant risk. Always test parameters in Dry Run mode before enabling ```LIVE_EXECUTION```.**
+*Disclaimer: AlphaBot is an automated execution tool. Algorithmic trading carries significant risk. Always test parameters in Dry Run mode before enabling ```LIVE_EXECUTION```.*
