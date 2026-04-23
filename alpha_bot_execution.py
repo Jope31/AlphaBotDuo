@@ -39,8 +39,9 @@ TAKE_PROFIT_MC_PCT = float(os.getenv("TAKE_PROFIT_MC_PCT", "5.0"))
 LOSS_ARM_PCT = float(os.getenv("LOSS_ARM_PCT", "1.5"))
 TRAILING_STOP_PCT = float(os.getenv("TRAILING_STOP_PCT", "1.5"))
 ENDING_STOP_PCT = float(os.getenv("ENDING_STOP_PCT", "0.5"))
-BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0"))
+BREAKEVEN_ACTIVATION_PCT = float(os.getenv("BREAKEVEN_ACTIVATION_PCT", "2.0")) # Suggest lowering to 0.75 or 1.0 in .env
 MIN_MULTIPLIER_FLOOR = float(os.getenv("MIN_MULTIPLIER_FLOOR", "0.5"))
+VWAP_CROSS_HWM_PCT = float(os.getenv("VWAP_CROSS_HWM_PCT", "1.0")) # HWM req for VWAP defense
 
 # --- VOLATILITY REGIME PARAMETERS ---
 VIX_LOW_THRESHOLD = float(os.getenv("VIX_LOW_THRESHOLD", "15.0"))
@@ -108,7 +109,7 @@ def analyze_intraday_data(api_client, symbols, target_date_et, lookback_days=5):
                 tick_threshold = 1
 
             intraday_stats[symbol] = {
-                "noise_floor_pct": round(float(noise_floor) * 100, 4),
+                "noise_floor_pct": round(float(noise_floor), 4),
                 "eod_vol_ratio": round(float(eod_vol_ratio), 2),
                 "recommended_tick_threshold": tick_threshold,
             }
@@ -166,9 +167,12 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
                 if saved_pct > 0:
                     report["summary"]["positive_guard_alpha_count"] += 1
 
-                exit_reason = (
-                    "Take-Profit" if f_ret == sym.get("triggered_at_stop") else "Trailing Stop"
-                )
+                if f_ret == sym.get("triggered_at_stop"):
+                    exit_reason = "Take-Profit"
+                elif sym.get("triggered_reason"):
+                    exit_reason = sym.get("triggered_reason")
+                else:
+                    exit_reason = "Trailing Stop"
 
                 report["triggers"].append(
                     {
@@ -237,6 +241,31 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False):
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=4)
 
+        # --- DISCORD EOD PUSH ---
+        if DISCORD_WEBHOOK_URL:
+            print("  -> Pushing EOD Snapshot to Discord...")
+            pos_triggers = [t for t in report.get("triggers", []) if t.get("saved_pct_guard_alpha", 0) > 0]
+            if pos_triggers:
+                triggers_text = "\n".join([f"• **{t['symphony_name']}**: Saved {t['saved_pct_guard_alpha']}% vs shadow." for t in pos_triggers])
+                if len(triggers_text) > 1024:
+                    triggers_text = triggers_text[:1020] + "..."
+            else:
+                triggers_text = "None today."
+
+            payload = {
+                "embeds": [{
+                    "title": f"📊 AlphaBot EOD Analysis ({current_date_str})",
+                    "color": 3447003,
+                    "description": f"**Total Monitored:** {report['summary']['total_monitored']}\n**Positive Guard Alpha Triggers:** {report['summary']['positive_guard_alpha_count']}",
+                    "fields": [{"name": "Successful Saves", "value": triggers_text}],
+                    "footer": {"text": "End of Day Post-Mortem"}
+                }]
+            }
+            try:
+                requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+            except Exception as e:
+                print(f"Failed to send EOD Discord webhook: {e}")
+
 # ==========================================
 # 3. API CONNECTORS
 # ==========================================
@@ -287,7 +316,10 @@ def send_discord_alert(
 
     if exit_reason == "Take-Profit":
         base_title = "🎯 Smart Take-Profit Locked"
-        live_color = 5763719
+        live_color = 5763719 # Green
+    elif exit_reason == "VWAP Breakdown":
+        base_title = "📉 VWAP Breakdown Exit"
+        live_color = 15548997 # Red/Orange
     elif current_return > 0:
         base_title = "✅ Profit Locked"
         live_color = 5763719
@@ -315,7 +347,7 @@ def send_discord_alert(
                     {"name": "MC Probability", "value": f"{prob_beating:.1f}%", "inline": True},
                     {"name": "Action Taken", "value": action_text, "inline": False},
                 ],
-                "footer": {"text": "Alpha Bot • Hybrid Trailing Stop"},
+                "footer": {"text": "Alpha Bot • Hybrid Defense Protocol"},
             }
         ]
     }
@@ -413,6 +445,43 @@ def get_live_spy_data():
     except requests.RequestException as e:
         print(f"Error fetching live SPY data: {e}")
     return 0.0
+
+def fetch_intraday_vwaps(tickers, headers, current_et):
+    """Fetches minute bars for today to calculate true VWAP for all active holdings."""
+    if not tickers:
+        return {}
+    
+    start_et = current_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    start_utc_str = start_et.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    vwap_data = {}
+    batch_size = 30
+    tickers_list = list(tickers)
+    
+    for i in range(0, len(tickers_list), batch_size):
+        batch = tickers_list[i : i + batch_size]
+        symbol_string = ",".join(batch)
+        url = f"https://data.alpaca.markets/v2/stocks/bars?symbols={symbol_string}&timeframe=1Min&start={start_utc_str}&limit=1000"
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code == 200:
+                data = response.json().get("bars", {})
+                for sym, bars in data.items():
+                    if not bars:
+                        continue
+                    df = pd.DataFrame(bars)
+                    df['pv'] = df['c'] * df['v']
+                    cumulative_pv = df['pv'].sum()
+                    cumulative_v = df['v'].sum()
+                    if cumulative_v > 0:
+                        vwap = cumulative_pv / cumulative_v
+                        last_price = df['c'].iloc[-1]
+                        vwap_data[sym] = {"vwap": vwap, "last_price": last_price}
+        except Exception as e:
+            print(f"Error fetching VWAP for batch {batch}: {e}")
+            
+    return vwap_data
 
 def get_live_vix():
     """Fetches live VIX index, utilizing our new SQLite cache."""
@@ -611,6 +680,9 @@ def main():
         if not historical_data:
             return
 
+        # Fetch True VWAP data for all current holdings
+        live_vwaps = fetch_intraday_vwaps(list(all_tickers), get_alpaca_headers(), current_et)
+
         spy_today = get_live_spy_data()
         vix_today = get_live_vix()
 
@@ -662,6 +734,7 @@ def main():
                         "mc_history": [],
                         "below_stop_count": 0,
                         "above_tp_count": 0,
+                        "vwap_ticks": 0,
                         "breakeven_locked": False,
                         "tick_threshold": symphony_tick_threshold,
                         "eod_vol_ratio": symphony_eod_ratio,
@@ -677,7 +750,7 @@ def main():
                 for key in ["triggered", "tp_armed", "breakeven_locked"]:
                     if key not in bot_state[symphony_id]:
                         bot_state[symphony_id][key] = False
-                for key in ["below_stop_count", "above_tp_count"]:
+                for key in ["below_stop_count", "above_tp_count", "vwap_ticks"]:
                     if key not in bot_state[symphony_id]:
                         bot_state[symphony_id][key] = 0
                 if "mc_history" not in bot_state[symphony_id]:
@@ -687,6 +760,7 @@ def main():
                     bot_state[symphony_id]["high_water_mark"] = current_return
 
                 high_water_mark = bot_state[symphony_id]["high_water_mark"]
+                safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
 
                 prob_beating = run_monte_carlo(holdings, historical_data, spy_today)
                 symphony_vol = calculate_20d_vol(holdings, historical_data)
@@ -751,7 +825,6 @@ def main():
                 else:
                     active_trailing_stop = dynamic_trailing_stop
 
-                safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
                 base_stop_level = safe_hwm - active_trailing_stop
 
                 effective_breakeven_activation = max(BREAKEVEN_ACTIVATION_PCT, symphony_vol)
@@ -766,6 +839,7 @@ def main():
                 if bot_state[symphony_id]["triggered"]:
                     stop_trigger_level = -999.0
 
+                # Check 1: Trailing Stop
                 is_trailing_stop_hit = False
                 if bot_state[symphony_id]["armed"] and not bot_state[symphony_id]["triggered"]:
                     if current_return <= stop_trigger_level:
@@ -780,6 +854,7 @@ def main():
                             print(f"  ✅ {symphony_name[:35]} recovered above stop. Confirmation reset.")
                         bot_state[symphony_id]["below_stop_count"] = 0
 
+                # Check 2: Take Profit
                 tp_triggered_now = False
                 if prob_beating < TAKE_PROFIT_MC_PCT:
                     if not bot_state[symphony_id]["tp_armed"] and not bot_state[symphony_id]["triggered"]:
@@ -803,6 +878,33 @@ def main():
                             print(f"  📉 {symphony_name[:35]} TP signal vanished. Still cranking.")
                         bot_state[symphony_id]["above_tp_count"] = 0
 
+                # Check 3: True VWAP Breakdown
+                is_vwap_broken = False
+                if safe_hwm >= VWAP_CROSS_HWM_PCT and current_return < safe_hwm:
+                    weighted_vwap_diff = 0.0
+                    valid_vwap_weight = 0.0
+                    
+                    for h in holdings:
+                        t = h.get("ticker")
+                        alloc = h.get("allocation", 0.0)
+                        if t in live_vwaps:
+                            p = live_vwaps[t]["last_price"]
+                            v = live_vwaps[t]["vwap"]
+                            if v > 0:
+                                weighted_vwap_diff += alloc * ((p - v) / v)
+                                valid_vwap_weight += alloc
+                    
+                    if valid_vwap_weight > 0.5: # Ensure we have data for majority of the portfolio
+                        if weighted_vwap_diff < 0:
+                            bot_state[symphony_id]["vwap_ticks"] += 1
+                            if bot_state[symphony_id]["vwap_ticks"] >= 3:
+                                is_vwap_broken = True
+                                print(f"  📉 {symphony_name[:35]} Portfolio VWAP broken. Forcing exit to protect gains.")
+                        else:
+                            bot_state[symphony_id]["vwap_ticks"] = 0
+                else:
+                    bot_state[symphony_id]["vwap_ticks"] = 0
+
                 print(f"  -> {symphony_name[:35]}: Ret: {current_return:.2f}% | HWM: {high_water_mark:.2f}% | Stop Dist: {active_trailing_stop:.2f}% | ArmProb: {prob_beating:.1f}%")
 
                 bot_state[symphony_id]["name"] = symphony_name
@@ -818,7 +920,7 @@ def main():
                 database.save_state(bot_state)
 
                 chart_event = None
-                if is_trailing_stop_hit or tp_triggered_now:
+                if is_trailing_stop_hit or tp_triggered_now or is_vwap_broken:
                     chart_event = "Triggered"
                 elif bot_state[symphony_id]["armed"] and not prev_armed:
                     chart_event = "Armed"
@@ -840,13 +942,20 @@ def main():
                     "mc_prob": prob_beating,
                 })
 
-                if is_trailing_stop_hit or tp_triggered_now:
-                    reason = "Take-Profit" if tp_triggered_now else "Trailing Stop"
+                if is_trailing_stop_hit or tp_triggered_now or is_vwap_broken:
+                    if tp_triggered_now:
+                        reason = "Take-Profit"
+                    elif is_vwap_broken:
+                        reason = "VWAP Breakdown"
+                    else:
+                        reason = "Trailing Stop"
+                    
                     print(f"  🚨 {reason.upper()} HIT FOR {symphony_name} 🚨")
 
                     bot_state[symphony_id]["armed"] = False
                     bot_state[symphony_id]["tp_armed"] = False
                     bot_state[symphony_id]["triggered"] = True
+                    bot_state[symphony_id]["triggered_reason"] = reason
                     bot_state[symphony_id]["triggered_at_return"] = current_return
                     bot_state[symphony_id]["triggered_at_hwm"] = safe_hwm
                     bot_state[symphony_id]["triggered_at_stop"] = current_return if tp_triggered_now else stop_trigger_level
@@ -865,7 +974,7 @@ def main():
                             print("     !!! EXECUTION FAILED. Reverting state to retry next loop !!!")
                             bot_state = database.load_state()
                             bot_state[symphony_id]["triggered"] = False
-                            bot_state[symphony_id]["armed"] = not tp_triggered_now
+                            bot_state[symphony_id]["armed"] = not tp_triggered_now and not is_vwap_broken
                             bot_state[symphony_id]["tp_armed"] = tp_triggered_now
                             bot_state[symphony_id]["high_water_mark"] = safe_hwm
                             database.save_state(bot_state)
