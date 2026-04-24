@@ -188,98 +188,127 @@
                     <!-- SECTION 3: STRATEGY VARIABLES -->
                     <div>
                         <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2">Strategy Variables</h4>
-                        <div class="space-y-4">
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-fuchsia-400 flex items-center gap-1.5 cursor-help" title="When MC Probability dips below this threshold, arm a take-profit trap.">TAKE_PROFIT_MC_PCT (Smart TP)</label>
-                                    <span class="text-xs text-slate-500">Default: 5.0</span>
+                        <div class="space-y-6">
+
+                            <!-- Layer 1: Volatility Base -->
+                            <div>
+                                <h5 class="text-[11px] font-bold text-blue-400 uppercase tracking-widest mb-3">Layer 1: Volatility Base</h5>
+                                <div class="space-y-4">
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div class="relative group">
+                                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block cursor-help" title="Multiplier applied to volatility when VIX is below the low threshold.">VIX_LOW_MULT</label>
+                                            <input type="number" step="0.1" id="env-vix-low" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
+                                        </div>
+                                        <div class="relative group">
+                                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block cursor-help" title="Multiplier applied to volatility when VIX is in normal range.">VIX_MID_MULT</label>
+                                            <input type="number" step="0.1" id="env-vix-mid" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
+                                        </div>
+                                        <div class="relative group">
+                                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block cursor-help" title="Multiplier applied to volatility when VIX is above the high threshold.">VIX_HIGH_MULT</label>
+                                            <input type="number" step="0.1" id="env-vix-high" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
+                                        </div>
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Absolute minimum trailing stop floor distance allowed.">MIN_MULTIPLIER_FLOOR</label>
+                                            <span class="text-xs text-slate-500">Default: 0.5</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-floor" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-rose-400 flex items-center gap-1.5 cursor-help" title="Vol-Scaled Minimum Floor. Drops below max(LOSS_ARM_PCT, Daily_Vol) will instantly arm the trailing stop.">LOSS_ARM_PCT (Flash Crash)</label>
+                                            <span class="text-xs text-slate-500">Default: 1.5</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-loss-arm" required class="w-full bg-slate-900 border border-rose-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-blue-300 flex items-center gap-1.5 cursor-help" title="Vol-Scaled Breakeven Floor. Locks stop at 0.0% once HWM exceeds max(BREAKEVEN_ACTIVATION_PCT, Daily_Vol).">BREAKEVEN_ACTIVATION_PCT</label>
+                                            <span class="text-xs text-slate-500">Default: 2.0</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-breakeven" required class="w-full bg-slate-900 border border-blue-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
                                 </div>
-                                <input type="number" step="0.1" id="env-tp-mc" required class="w-full bg-slate-900 border border-fuchsia-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500">
                             </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="When MC Probability dips below this threshold, arm the trailing stop.">TRIGGER_THRESHOLD_PCT (Trailing Stop)</label>
-                                    <span class="text-xs text-slate-500">Default: 15.0</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-trigger" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-rose-400 flex items-center gap-1.5 cursor-help" title="Vol-Scaled Minimum Floor. Drops below max(LOSS_ARM_PCT, Daily_Vol) will instantly arm the trailing stop.">LOSS_ARM_PCT (Flash Crash)</label>
-                                    <span class="text-xs text-slate-500">Default: 1.5</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-loss-arm" required class="w-full bg-slate-900 border border-rose-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help">MAX_SQUEEZE_FLOOR</label>
-                                    <span class="text-xs text-slate-500">Default: 0.20</span>
-                                </div>
-                                <input type="number" step="0.05" id="env-squeeze-floor" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
-                            <div class="grid grid-cols-3 gap-3">
-                                <div class="relative group">
-                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block">VIX_LOW_MULT</label>
-                                    <input type="number" step="0.1" id="env-vix-low" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
-                                </div>
-                                <div class="relative group">
-                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block">VIX_MID_MULT</label>
-                                    <input type="number" step="0.1" id="env-vix-mid" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
-                                </div>
-                                <div class="relative group">
-                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1 block">VIX_HIGH_MULT</label>
-                                    <input type="number" step="0.1" id="env-vix-high" required class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500">
+
+                            <!-- Layer 2: Logarithmic Time Decay -->
+                            <div>
+                                <h5 class="text-[11px] font-bold text-amber-400 uppercase tracking-widest mb-3">Layer 2: Logarithmic Time Decay</h5>
+                                <div class="space-y-4">
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Morning starting trailing stop percentage when volatility is missing.">TRAILING_STOP_PCT (Fallback Start)</label>
+                                            <span class="text-xs text-slate-500">Default: 1.5</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-trailing-stop" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-emerald-400 flex items-center gap-1.5 cursor-help" title="Afternoon ending trailing stop percentage when volatility is missing.">ENDING_STOP_PCT (Fallback End)</label>
+                                            <span class="text-xs text-slate-500">Default: 0.5</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-ending-stop" required class="w-full bg-slate-900 border border-emerald-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                                    </div>
                                 </div>
                             </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help">MIN_MULTIPLIER_FLOOR</label>
-                                    <span class="text-xs text-slate-500">Default: 0.5</span>
+
+                            <!-- Layer 3: Monte Carlo Strangler -->
+                            <div>
+                                <h5 class="text-[11px] font-bold text-fuchsia-400 uppercase tracking-widest mb-3">Layer 3: Monte Carlo Strangler</h5>
+                                <div class="space-y-4">
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="When MC Probability dips below this threshold, arm the trailing stop.">TRIGGER_THRESHOLD_PCT (Trailing Stop)</label>
+                                            <span class="text-xs text-slate-500">Default: 15.0</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-trigger" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-fuchsia-400 flex items-center gap-1.5 cursor-help" title="When MC Probability dips below this threshold, arm a take-profit trap.">TAKE_PROFIT_MC_PCT (Smart TP)</label>
+                                            <span class="text-xs text-slate-500">Default: 5.0</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-tp-mc" required class="w-full bg-slate-900 border border-fuchsia-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Maximum trailing stop reduction multiplier during a Monte Carlo squeeze.">MAX_SQUEEZE_FLOOR</label>
+                                            <span class="text-xs text-slate-500">Default: 0.20</span>
+                                        </div>
+                                        <input type="number" step="0.05" id="env-squeeze-floor" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
                                 </div>
-                                <input type="number" step="0.1" id="env-floor" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help">TRAILING_STOP_PCT (Fallback Start)</label>
-                                    <span class="text-xs text-slate-500">Default: 1.5</span>
+
+                            <!-- Hybrid Defenses -->
+                            <div>
+                                <h5 class="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-3">Hybrid Defenses</h5>
+                                <div class="space-y-4">
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-rose-400 flex items-center gap-1.5 cursor-help" title="HWM required to arm the True VWAP breakdown defense.">VWAP_CROSS_HWM_PCT</label>
+                                            <span class="text-xs text-slate-500">Default: 1.0</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-vwap-hwm" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Velocity ratio required to trigger parabolic squeeze.">PARABOLIC_VELOCITY_THRESHOLD</label>
+                                            <span class="text-xs text-slate-500">Default: 2.0</span>
+                                        </div>
+                                        <input type="number" step="0.1" id="env-para-vel" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
+                                    <div class="relative group">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Maximum stop distance reduction during a parabolic squeeze.">MAX_PARABOLIC_SQUEEZE</label>
+                                            <span class="text-xs text-slate-500">Default: 0.50</span>
+                                        </div>
+                                        <input type="number" step="0.05" id="env-para-sqz" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    </div>
                                 </div>
-                                <input type="number" step="0.1" id="env-trailing-stop" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-emerald-400 flex items-center gap-1.5 cursor-help">ENDING_STOP_PCT (Fallback End)</label>
-                                    <span class="text-xs text-slate-500">Default: 0.5</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-ending-stop" required class="w-full bg-slate-900 border border-emerald-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-blue-300 flex items-center gap-1.5 cursor-help" title="Vol-Scaled Breakeven Floor. Locks stop at 0.0% once HWM exceeds max(BREAKEVEN_ACTIVATION_PCT, Daily_Vol).">BREAKEVEN_ACTIVATION_PCT</label>
-                                    <span class="text-xs text-slate-500">Default: 2.0</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-breakeven" required class="w-full bg-slate-900 border border-blue-600/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-rose-400 flex items-center gap-1.5 cursor-help" title="HWM required to arm the True VWAP breakdown defense.">VWAP_CROSS_HWM_PCT</label>
-                                    <span class="text-xs text-slate-500">Default: 1.0</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-vwap-hwm" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Velocity ratio required to trigger parabolic squeeze.">PARABOLIC_VELOCITY_THRESHOLD</label>
-                                    <span class="text-xs text-slate-500">Default: 2.0</span>
-                                </div>
-                                <input type="number" step="0.1" id="env-para-vel" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
-                            <div class="relative group">
-                                <div class="flex justify-between items-center mb-1">
-                                    <label class="text-sm font-semibold text-slate-300 flex items-center gap-1.5 cursor-help" title="Maximum stop distance reduction during a parabolic squeeze.">MAX_PARABOLIC_SQUEEZE</label>
-                                    <span class="text-xs text-slate-500">Default: 0.50</span>
-                                </div>
-                                <input type="number" step="0.05" id="env-para-sqz" required class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                            </div>
+
                         </div>
                     </div>
                 </div>
