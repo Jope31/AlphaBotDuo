@@ -639,7 +639,7 @@
 
                 symphonyKeys.forEach(id => {
                     const sym = stateObj[id];
-                    if ((sym.armed || sym.tp_armed) && !sym.triggered) armedCount++;
+                    if ((sym.armed || sym.tp_armed || sym.para_armed) && !sym.triggered) armedCount++;
                     const accId = sym.account || 'Unknown Account';
                     if (!accountsMap[accId]) accountsMap[accId] = [];
                     accountsMap[accId].push({ id, ...sym });
@@ -702,6 +702,7 @@
                     syms.forEach(sym => {
                         const isArmed = sym.armed;
                         const isTpArmed = sym.tp_armed;
+                        const isParaArmed = sym.para_armed;
                         const isTriggered = sym.triggered;
                         const belowStopCount = sym.below_stop_count || 0;
                         const aboveTpCount = sym.above_tp_count || 0;
@@ -713,6 +714,8 @@
                             } else {
                                 statusBadge = `<span class="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(244,63,94,0.15)]">TRIGGERED</span>`;
                             }
+                        } else if (isParaArmed) {
+                            statusBadge = `<span class="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(6,182,212,0.15)]" title="Parabolic Squeeze Active">PARA-ARMED</span>`;
                         } else if (isTpArmed) {
                             let confirmBadge = aboveTpCount === 1 ? `<span class="ml-1 text-[9px] animate-pulse">(1/2 Ticks)</span>` : ``;
                             statusBadge = `<span class="bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(217,70,239,0.15)]" title="Smart Take-Profit is Armed">TP-ARMED${confirmBadge}</span>`;
@@ -927,20 +930,21 @@
 
                 // Create custom point shapes for events
                 const pointStyles = data.map(d => {
-                    if (d.event === 'Armed' || d.event === 'TP-Armed') return 'triangle';
+                    if (d.event === 'Armed' || d.event === 'TP-Armed' || d.event === 'Para-Armed') return 'triangle';
                     if (d.event === 'Triggered') return 'rectRot'; 
                     if (d.event === 'VWAP_Break') return 'star';
                     return 'circle';
                 });
                 
                 const pointRadii = data.map(d => {
-                    if (d.event === 'Armed' || d.event === 'TP-Armed') return 8;
+                    if (d.event === 'Armed' || d.event === 'TP-Armed' || d.event === 'Para-Armed') return 8;
                     if (d.event === 'Triggered') return 10;
                     if (d.event === 'VWAP_Break') return 12;
                     return 0; // Hide normal points for clean line
                 });
                 
                 const pointColors = data.map(d => {
+                    if (d.event === 'Para-Armed') return '#06b6d4'; // cyan-500
                     if (d.event === 'Armed' || d.event === 'TP-Armed') return '#eab308'; // amber-500
                     if (d.event === 'Triggered') return '#e11d48'; // rose-600
                     if (d.event === 'VWAP_Break') return '#8b5cf6'; // violet-500
@@ -1039,6 +1043,9 @@
                                         if(event) {
                                             if (event === 'VWAP_Break') {
                                                 return `\n📉 [VWAP EXIT]`;
+                                            }
+                                            if (event === 'Para-Armed') {
+                                                return `\n⚡ [Parabolic Squeeze]`;
                                             }
                                             return `\nEvent: ${event}`;
                                         }
@@ -1354,6 +1361,7 @@
                 const effectiveBreakeven = Math.max(simBreakeven, vol);
 
                 // Arming logic
+                let isSimParaArmed = (sym.para_armed === true);
                 let isSimArmed = (sym.mc_prob !== undefined && sym.mc_prob < simTrigger && sym.mc_prob >= simTpMc) || simCurRet < -effectiveLossThreshold;
                 let isSimTpArmed = (sym.mc_prob !== undefined && sym.mc_prob < simTpMc);
                 if (forceArm) isSimArmed = true;
@@ -1388,6 +1396,8 @@
                     } else {
                         statusBadge = `<span class="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(244,63,94,0.2)]">TRIGGERED</span>`;
                     }
+                } else if (isSimParaArmed) {
+                    statusBadge = `<span class="bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(6,182,212,0.2)]">PARA-ARMED</span>`;
                 } else if (isSimTpArmed) {
                     statusBadge = `<span class="bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 px-2 py-0.5 rounded text-[10px] font-bold tracking-widest shadow-[0_0_8px_rgba(217,70,239,0.2)]">TP-ARMED</span>`;
                 } else if (isSimArmed) {

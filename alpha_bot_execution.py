@@ -1115,9 +1115,10 @@ def main():
 
                 prev_armed = bot_state[symphony_id].get("armed", False)
                 prev_tp_armed = bot_state[symphony_id].get("tp_armed", False)
+                prev_para_armed = bot_state[symphony_id].get("para_armed", False)
                 prev_triggered = bot_state[symphony_id].get("triggered", False)
 
-                for key in ["triggered", "tp_armed", "breakeven_locked"]:
+                for key in ["triggered", "tp_armed", "para_armed", "breakeven_locked"]:
                     if key not in bot_state[symphony_id]:
                         bot_state[symphony_id][key] = False
                 for key in ["below_stop_count", "above_tp_count", "vwap_ticks"]:
@@ -1150,11 +1151,13 @@ def main():
                         )
 
                 velocity_squeeze = 1.0
+                bot_state[symphony_id]["para_armed"] = False
                 if symphony_vol > 0.5:
                     velocity = high_water_mark / symphony_vol
                     if velocity > PARABOLIC_VELOCITY_THRESHOLD:
                         excess = min(1.0, (velocity - PARABOLIC_VELOCITY_THRESHOLD) / 2.0)
                         velocity_squeeze = 1.0 - (excess * MAX_PARABOLIC_SQUEEZE)
+                        bot_state[symphony_id]["para_armed"] = velocity_squeeze < 1.0
                         print(
                             f"  ⚡ [{symphony_name[:20]}] PARABOLIC SQUEEZE: {velocity_squeeze:.2f}x"
                         )
@@ -1322,12 +1325,15 @@ def main():
                     chart_event = "Armed"
                 elif bot_state[symphony_id]["tp_armed"] and not prev_tp_armed:
                     chart_event = "TP-Armed"
+                elif bot_state[symphony_id]["para_armed"] and not prev_para_armed:
+                    chart_event = "Para-Armed"
 
                 tracked_stop = (
                     stop_trigger_level
                     if (
                         bot_state[symphony_id]["armed"]
                         or bot_state[symphony_id]["tp_armed"]
+                        or bot_state[symphony_id]["para_armed"]
                         or bot_state[symphony_id]["triggered"]
                         or prev_triggered
                     )
