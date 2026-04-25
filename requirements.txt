@@ -5,3 +5,6 @@ numpy
 schedule
 pandas
 alpaca-trade-api
+matplotlib
+seaborn
+scikit-optimize
