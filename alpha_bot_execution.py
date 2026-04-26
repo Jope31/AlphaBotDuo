@@ -298,7 +298,7 @@ def run_autotuner(bot_state, current_date_str):
         plt.tight_layout()
         plt.savefig("autotune_heatmap.png", dpi=100)
         plt.close()
-    except (OSError, ValueError, TypeError, KeyError) as e:
+    except (OSError, RuntimeError, ValueError) as e:
         print(f"     Failed to generate Heatmap: {e}")
 
     # 7. Push to Discord
@@ -343,7 +343,7 @@ def run_autotuner(bot_state, current_date_str):
             }
             files = {"file": ("heatmap.png", file_data, "image/png")}
             requests.post(DISCORD_WEBHOOK_URL, data=payload, files=files, timeout=20)
-        except Exception as e:
+        except (OSError, requests.RequestException, ValueError) as e:
             print(f"     Failed to send Discord webhook: {e}")
 
 
