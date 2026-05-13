@@ -416,11 +416,12 @@ def main():
                 for sym in symphonies:
                     s_id = sym["id"]
                     if s_id in bot_state:
-                        bot_state[s_id]["current_holdings"] = [
-                            {"ticker": h.get("working_ticker", h.get("ticker")), "allocation": h.get("allocation", 0.0)}
-                            for h in sym.get("holdings", [])
-                        ]
-                        bot_state[s_id]["current_return"] = sym.get("last_percent_change", 0.0) * 100
+                        if not bot_state[s_id].get("triggered"):
+                            bot_state[s_id]["current_holdings"] = [
+                                {"ticker": h.get("working_ticker", h.get("ticker")), "allocation": h.get("allocation", 0.0)}
+                                for h in sym.get("holdings", [])
+                            ]
+                            bot_state[s_id]["current_return"] = sym.get("last_percent_change", 0.0) * 100
             
             # Save post_mortem flag immediately to prevent race conditions if execution is slow
             bot_state["post_mortem_run"] = current_date_str
