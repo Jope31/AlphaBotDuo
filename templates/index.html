@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaBot Dashboard v3</title>
+    <title>AlphaBot v3</title>
     <!-- Add Favicon -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/png">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -44,7 +44,7 @@
                 <div class="flex items-center gap-3">
                     <h1
                         class="text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-                        AlphaBot Dashboard v3
+                        AlphaBot v3
                     </h1>
                     <div id="dashboard-mode-badge"
                         class="px-2.5 py-0.5 bg-slate-700 text-slate-400 border border-slate-600 rounded text-[10px] font-bold tracking-widest hidden">
@@ -62,6 +62,10 @@
                         <button onclick="openHistoryModal(7)" id="history-btn"
                             class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 rounded text-[10px] font-bold uppercase tracking-widest transition-colors shadow-sm w-full text-center">
                             AlphaBot History
+                        </button>
+                        <button onclick="openDailyHistoryModal()" id="daily-history-btn"
+                            class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 rounded text-[10px] font-bold uppercase tracking-widest transition-colors shadow-sm w-full text-center mt-1">
+                            Daily History
                         </button>
                     </div>
                 </div>
@@ -668,8 +672,128 @@
             </div>
         </div>
     </div>
+    <!-- Daily History Modal -->
+    <div id="daily-history-modal"
+        class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 rounded-2xl shadow-2xl border border-slate-600 w-full max-w-6xl h-[80vh] flex overflow-hidden transform scale-95 transition-transform duration-300"
+            id="daily-history-modal-content">
+            <!-- Sidebar: Dates -->
+            <div class="w-64 bg-slate-900/50 border-r border-slate-700 flex flex-col">
+                <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
+                    <h3 class="font-bold text-white uppercase tracking-widest text-sm">Select Date</h3>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="daily-history-dates-list">
+                    <!-- Dates injected here -->
+                </div>
+            </div>
+            
+            <!-- Main Content: Symphonies & Logs -->
+            <div class="flex-1 flex flex-col bg-slate-800">
+                <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
+                    <h3 class="font-bold text-white uppercase tracking-widest text-sm" id="daily-history-title">Activity Logs</h3>
+                    <button onclick="closeDailyHistoryModal()" class="text-slate-400 hover:text-white transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6" id="daily-history-logs-container">
+                    <div class="text-slate-400 text-sm italic">Select a date from the sidebar to view symphony activity.</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
+        // --- Daily History Modal Logic ---
+        async function openDailyHistoryModal() {
+            const modal = document.getElementById('daily-history-modal');
+            const content = document.getElementById('daily-history-modal-content');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+            }, 10);
+
+            try {
+                const res = await fetch('/api/history_dates');
+                const dates = await res.json();
+                const list = document.getElementById('daily-history-dates-list');
+                list.innerHTML = '';
+                if(dates.length === 0) {
+                    list.innerHTML = '<div class="text-slate-400 text-sm italic">No history found.</div>';
+                } else {
+                    dates.forEach(d => {
+                        const btn = document.createElement('button');
+                        btn.className = 'w-full text-left px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors text-sm';
+                        btn.textContent = d;
+                        btn.onclick = () => loadDailyHistory(d);
+                        list.appendChild(btn);
+                    });
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('daily-history-dates-list').innerHTML = '<div class="text-rose-400 text-sm">Error loading dates.</div>';
+            }
+        }
+
+        function closeDailyHistoryModal() {
+            const modal = document.getElementById('daily-history-modal');
+            const content = document.getElementById('daily-history-modal-content');
+            modal.classList.add('opacity-0');
+            content.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        async function loadDailyHistory(dateStr) {
+            document.getElementById('daily-history-title').textContent = `Activity Logs - ${dateStr}`;
+            const container = document.getElementById('daily-history-logs-container');
+            container.innerHTML = '<div class="text-slate-400 text-sm italic">Loading...</div>';
+
+            try {
+                const res = await fetch(`/api/logs/${dateStr}/all`);
+                const allLogs = await res.json();
+
+                if (Object.keys(allLogs).length === 0) {
+                    container.innerHTML = '<div class="text-slate-400 text-sm italic">No logs recorded for this date.</div>';
+                    return;
+                }
+
+                let html = '<div class="space-y-6">';
+                for (const [symId, logs] of Object.entries(allLogs)) {
+                    if (!logs || logs.length === 0) continue;
+                    
+                    html += `<div class="bg-slate-900/50 rounded-xl p-4 border border-slate-700">`;
+                    html += `<h4 class="text-indigo-400 font-bold mb-3 border-b border-slate-700/50 pb-2">${symId}</h4>`;
+                    html += `<div class="space-y-2">`;
+                    
+                    logs.forEach(l => {
+                        const t = new Date(l.timestamp).toLocaleTimeString();
+                        let badgeColor = "bg-slate-800 text-slate-300";
+                        if (l.event_type === "armed") badgeColor = "bg-amber-500/20 text-amber-400 border border-amber-500/30";
+                        else if (l.event_type === "para-armed") badgeColor = "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30";
+                        else if (l.event_type === "tp-armed") badgeColor = "bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30";
+                        else if (l.event_type === "triggered") badgeColor = "bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                        
+                        html += `
+                            <div class="flex items-start gap-3">
+                                <span class="text-xs font-mono text-slate-500 mt-0.5">${t}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest ${badgeColor}">${l.event_type.toUpperCase()}</span>
+                                <span class="text-sm text-slate-300">${l.message}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `</div></div>`;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = '<div class="text-rose-400 text-sm">Error loading logs.</div>';
+            }
+        }
+
         // --- Globals ---
         let accountLabels = {};
         let globalStateCache = {};
@@ -1010,9 +1134,10 @@
         });
 
         // --- Activity Log Modal Logic ---
-        async function openLogModal(symphonyId, symphonyName) {
+	async function openLogModal(symphonyId, symphonyName) {
             try {
-                const response = await fetch(`/api/logs/${symphonyId}`);
+                const dateStr = globalStateCache.date || new Date().toISOString().split('T')[0];
+                const response = await fetch(`/api/logs/${dateStr}/${symphonyId}`);
                 const logs = await response.json();
 
                 const modal = document.getElementById('log-modal');
