@@ -86,8 +86,12 @@ def fetch_symphony_stats(account_id):
         response = requests.get(url, headers=get_composer_headers(), timeout=15)
         time.sleep(1.5)
         if response.status_code == 200:
-            return response.json().get("symphonies", [])
-        print(f"Error fetching account {account_id}: {response.text}")
+            try:
+                return response.json().get("symphonies", [])
+            except ValueError:
+                print(f"Warning: Failed to decode JSON from Composer API (HTTP 200) for account {account_id}. Returning [].")
+                return []
+        print(f"Error fetching account {account_id}: Composer API Error (HTTP {response.status_code})")
     except requests.RequestException as e:
         print(f"Exception fetching account {account_id}: {e}")
     return []
@@ -122,12 +126,12 @@ def execute_sell_to_cash(actual_symphony_id, account_id, bot_state=None, sym_id=
                 
             if response.status_code >= 500 and attempt < len(backoff_intervals):
                 delay = backoff_intervals[attempt]
-                print(f"     !!! [COMPOSER ERROR HTTP {response.status_code}]: {response.text}")
+                print(f"     !!! [COMPOSER ERROR HTTP {response.status_code}]")
                 print(f"     -> Retrying in {delay}s...")
                 time.sleep(delay)
                 continue
 
-            print(f"     !!! [COMPOSER REJECTED]: {response.text}")
+            print(f"     !!! [COMPOSER REJECTED]")
             time.sleep(1.5)
             return False
         except requests.RequestException as e:
@@ -169,7 +173,7 @@ def fetch_alpaca_history(tickers, current_date_str):
 
         page_token = None
         while True:
-            url = f"{ALPACA_BASE_URL}/stocks/bars?symbols={symbol_string}&timeframe=1Day&start={start_date}&limit=10000&adjustment=split"
+            url = f"{ALPACA_BASE_URL}/stocks/bars?symbols={symbol_string}&timeframe=1Day&start={start_date}&limit=10000&adjustment=split&feed=iex"
             if page_token:
                 url += f"&page_token={page_token}"
 
@@ -190,7 +194,12 @@ def fetch_alpaca_history(tickers, current_date_str):
                 print("Failed to download batch after multiple retries.")
                 break
 
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                print("Warning: Failed to decode JSON from Alpaca API for batch. Skipping batch.")
+                break
+
             if "bars" in data:
                 for symbol, bars in data["bars"].items():
                     for j in range(1, len(bars)):
@@ -238,7 +247,7 @@ def fetch_intraday_vwaps(tickers, headers, current_et):
     for i in range(0, len(tickers_list), batch_size):
         batch = tickers_list[i : i + batch_size]
         symbol_string = ",".join(batch)
-        url = f"{ALPACA_BASE_URL}/stocks/bars?symbols={symbol_string}&timeframe=1Min&start={start_utc_str}&limit=1000"
+        url = f"{ALPACA_BASE_URL}/stocks/bars?symbols={symbol_string}&timeframe=1Min&start={start_utc_str}&limit=1000&feed=iex"
 
         try:
             response = requests.get(url, headers=headers, timeout=15)
@@ -255,7 +264,7 @@ def fetch_intraday_vwaps(tickers, headers, current_et):
                         vwap = cumulative_pv / cumulative_v
                         last_price = float(df['c'].iloc[-1])
                         vwap_data[sym] = {"vwap": vwap, "last_price": last_price}
-        except Exception as e:
+        except (requests.RequestException, ValueError, KeyError) as e:
             print(f"Error fetching VWAP for batch {batch}: {e}")
 
     return vwap_data
@@ -264,9 +273,9 @@ def fetch_intraday_vwaps(tickers, headers, current_et):
 def get_current_et():
     utc_now = datetime.now(timezone.utc)
     try:
-        from zoneinfo import ZoneInfo
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         return datetime.now(ZoneInfo("America/New_York"))
-    except Exception:
+    except ZoneInfoNotFoundError:
         if 3 <= utc_now.month <= 11:
             return utc_now - timedelta(hours=4)
         return utc_now - timedelta(hours=5)
@@ -293,7 +302,7 @@ def main():
 
         try:
             start_h, start_m = map(int, EXECUTION_START_TIME.split(":"))
-        except:
+        except ValueError:
             start_h, start_m = 9, 30
 
         market_open = dt_time(start_h, start_m)
@@ -589,8 +598,7 @@ def main():
                 vol_mult = acc_params.get("VOLATILITY_MAGNITUDE_MULTIPLIER", 0.5)
                 prob_beating, prob_loss_dynamic, dynamic_floor = math_engine.run_monte_carlo(holdings, historical_data, spy_today, symphony_vol, SIMULATION_PATHS, NEIGHBOR_K, volatility_multiplier=vol_mult)
 
-                raw_dynamic_bleed = -(symphony_vol * acc_VWAP_BLEED_MULTIPLIER)
-                acc_VWAP_BLEED_ARM_PCT = max(-3.0, min(-0.5, raw_dynamic_bleed))
+                acc_VWAP_BLEED_ARM_PCT = math_engine.calculate_vwap_bleed_threshold(symphony_vol, acc_VWAP_BLEED_MULTIPLIER)
 
                 should_arm = False
                 arm_reason = ""
@@ -617,10 +625,12 @@ def main():
                 # --- PARABOLIC SQUEEZE LOGIC ---
                 prev_return = bot_state[symphony_id].get("prev_return", current_return)
                 velocity = current_return - prev_return
+                
+                para_threshold = acc_params.get("PARABOLIC_VELOCITY_THRESHOLD", PARABOLIC_VELOCITY_THRESHOLD)
+                is_para = math_engine.check_parabolic_velocity(current_return, prev_return, para_threshold)
                 bot_state[symphony_id]["prev_return"] = current_return
 
-                para_threshold = acc_params.get("PARABOLIC_VELOCITY_THRESHOLD", PARABOLIC_VELOCITY_THRESHOLD)
-                if velocity >= para_threshold:
+                if is_para:
                     if not bot_state[symphony_id]["para_armed"]:
                         bot_state[symphony_id]["para_armed"] = True
                         print(f"  🚀 {symphony_name} PARA-ARMED (Velocity: {velocity:.2f}%) 🚀")
@@ -630,31 +640,17 @@ def main():
                 m_open_dt = current_et.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
                 m_close_dt = current_et.replace(hour=16, minute=0, second=0, microsecond=0)
                 time_ratio = max(0.0, min(1.0, (current_et - m_open_dt).total_seconds() / (m_close_dt - m_open_dt).total_seconds()))
-                decay_curve = math.log10(1 + 9 * time_ratio)
-                
-                # Calculate Dynamic Multiplier (Decays from 1.5x to 0.5x)
-                mult_open = 1.5
-                mult_close = 0.5
-                dynamic_multiplier = mult_open - ((mult_open - mult_close) * decay_curve)
-
-                # Calculate Minimum Floors (Decays from 0.3% to 0.15%)
-                min_stop_open = 0.3
-                min_stop_close = 0.15
-                dynamic_min_stop = min_stop_open - ((min_stop_open - min_stop_close) * decay_curve)
+                dynamic_multiplier, dynamic_min_stop = math_engine.calculate_time_decay_multipliers(time_ratio)
 
                 # Calculate active stop distance based strictly on 20-day volatility
 
                 safe_vol = symphony_vol if symphony_vol > 0 else 1.0
-                active_trailing_stop = max((safe_vol * dynamic_multiplier), dynamic_min_stop)
-
-                # Apply Parabolic Squeeze multiplier if armed
-                if bot_state[symphony_id].get("para_armed") or bot_state[symphony_id].get("breakeven_locked"):
-                    active_trailing_stop *= acc_params.get("MAX_PARABOLIC_SQUEEZE", MAX_PARABOLIC_SQUEEZE)
+                is_squeezed = bot_state[symphony_id].get("para_armed") or bot_state[symphony_id].get("breakeven_locked")
+                active_trailing_stop = math_engine.calculate_active_stop_distance(safe_vol, dynamic_multiplier, dynamic_min_stop, is_squeezed, acc_params.get("MAX_PARABOLIC_SQUEEZE", MAX_PARABOLIC_SQUEEZE))
 
                 base_stop_level = safe_hwm - active_trailing_stop
 
-                dynamic_activation = max(0.4, min(3.0, symphony_vol))
-                if current_return >= (dynamic_activation - 0.2):
+                if math_engine.check_breakeven_activation(current_return, symphony_vol):
                     bot_state[symphony_id]["hwm_hold_ticks"] += 1
                 else:
                     bot_state[symphony_id]["hwm_hold_ticks"] = 0
@@ -822,6 +818,45 @@ def main():
                         "prob_loss_dynamic": prob_loss_dynamic,
                         "dynamic_floor": dynamic_floor,
                         "acc_VOLATILITY_MAGNITUDE_MULTIPLIER": vol_mult
+                    })
+
+        # --- GHOST SYMPHONY SHADOW CHART FIX ---
+        # Process triggered symphonies that have been dropped from the Composer API payload
+        for s_id, s_data in bot_state.items():
+            if isinstance(s_data, dict) and s_data.get("triggered") and s_id not in active_symphony_ids:
+                
+                holdings = s_data.get("triggered_basket_snapshot", [])
+                f_ret = s_data.get("triggered_at_return", 0.0)
+                trigger_prices = s_data.get("trigger_prices", {})
+                post_trigger_move = 0.0
+                
+                if holdings and trigger_prices:
+                    for h in holdings:
+                        t = h.get("ticker")
+                        alloc = h.get("allocation", 0.0)
+                        if t in trigger_prices and t in live_vwaps:
+                            p_start = trigger_prices[t]
+                            p_now = live_vwaps[t]["last_price"]
+                            if p_start > 0:
+                                post_trigger_move += alloc * ((p_now - p_start) / p_start)
+                                
+                    shadow_return = f_ret + (post_trigger_move * 100.0)
+                    
+                    sym_chart_data = chart_history["symphonies"].setdefault(s_id, [])
+                    tracked_stop = s_data.get("triggered_at_stop", -999.0)
+                    if tracked_stop == -999.0:
+                        tracked_stop = None
+
+                    sym_chart_data.append({
+                        "time": current_time_str,
+                        "return": shadow_return,
+                        "stop": tracked_stop,
+                        "event": None,
+                        "mc_prob": s_data.get("mc_prob", 0.0),
+                        "vol": s_data.get("symphony_vol", 0.0),
+                        "vwap_diff": 0.0,
+                        "base_atr_pct": 0.0,
+                        "dynamic_multiplier": 1.0
                     })
 
         # Process Execution Queue
