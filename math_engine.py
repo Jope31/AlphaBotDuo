@@ -1,8 +1,9 @@
 import numpy as np
 
-def run_monte_carlo(holdings, historical_data, spy_today_return, simulation_paths=5000, neighbor_k=150):
+def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150):
     """
     Vectorized Monte Carlo simulation using Nearest Neighbors matching.
+    Includes an unconditional bootstrap fallback.
     """
     current_symphony_return = sum(
         (h.get("last_percent_change", 0.0) * 100.0) * h.get("allocation", 0.0)
@@ -10,7 +11,40 @@ def run_monte_carlo(holdings, historical_data, spy_today_return, simulation_path
     )
     valid_dates = sorted(list(historical_data.keys()))
     if len(valid_dates) < 20:
-        return 100.0
+        return 100.0, 0.0
+
+    tickers = [h["ticker"] for h in holdings]
+    weights = np.array([h.get("allocation", 0.0) for h in holdings])
+
+    # Step 1: Pre-compute portfolio returns for ALL valid dates
+    all_returns_matrix = np.zeros((len(valid_dates), len(tickers)))
+    for i, date in enumerate(valid_dates):
+        day_data = historical_data[date]
+        spy_ret = day_data.get("SPY", {}).get("daily_ret", 0.0)
+        for j, ticker in enumerate(tickers):
+            if ticker in day_data:
+                all_returns_matrix[i, j] = day_data[ticker].get("daily_ret", 0.0)
+            else:
+                all_returns_matrix[i, j] = spy_ret
+                
+    all_day_returns = all_returns_matrix.dot(weights) * 100.0
+
+    # Step 2: Calculate unconditional distribution
+    unconditional_returns = np.random.choice(all_day_returns, size=simulation_paths, replace=True)
+    unconditional_returns.sort()
+    
+    below_count_unc = np.searchsorted(unconditional_returns, current_symphony_return)
+    unconditional_prob_beating = ((simulation_paths - below_count_unc) / simulation_paths) * 100.0
+    
+    # Dynamic Floor Edge Case: Enforce a minimum safe volatility so floor doesn't collapse to 0
+    safe_vol_for_floor = max(symphony_vol, 0.5)
+    dynamic_floor = current_symphony_return - (safe_vol_for_floor * 0.5)
+    below_floor_count_unc = np.searchsorted(unconditional_returns, dynamic_floor)
+    unconditional_prob_loss_dynamic = (below_floor_count_unc / simulation_paths) * 100.0
+
+    # Step 3: Safety check for SPY data
+    if spy_today_return is None or not isinstance(spy_today_return, (int, float)) or np.isnan(spy_today_return):
+        return unconditional_prob_beating, unconditional_prob_loss_dynamic
 
     # 1. Calculate distances based on SPY return and rolling 20-day volatility
     spy_returns = np.array([historical_data[date].get("SPY", {}).get("daily_ret", 0.0) for date in valid_dates])
@@ -39,33 +73,23 @@ def run_monte_carlo(holdings, historical_data, spy_today_return, simulation_path
         # argpartition is faster than full sort
         nearest_indices = np.argpartition(distances, neighbor_k)[:neighbor_k]
     
-    nearest_days = [valid_dates[i] for i in nearest_indices]
+    if len(nearest_indices) < 20:
+        return unconditional_prob_beating, unconditional_prob_loss_dynamic
     
-    # 3. Weights and Tickers
-    tickers = [h["ticker"] for h in holdings]
-    weights = np.array([h.get("allocation", 0.0) for h in holdings])
+    # 4. Calculate path returns using the pre-computed array directly
+    nearest_day_returns = all_day_returns[nearest_indices]
     
-    # 4. Build Returns Matrix (K days x N tickers)
-    returns_matrix = np.zeros((len(nearest_days), len(tickers)))
-    
-    for i, date in enumerate(nearest_days):
-        day_data = historical_data[date]
-        spy_ret = day_data.get("SPY", {}).get("daily_ret", 0.0)
-        for j, ticker in enumerate(tickers):
-            if ticker in day_data:
-                returns_matrix[i, j] = day_data[ticker].get("daily_ret", 0.0)
-            else:
-                returns_matrix[i, j] = spy_ret
-                
-    # 5. Calculate path returns (dot product is highly optimized in numpy)
-    nearest_day_returns = returns_matrix.dot(weights) * 100.0
-    
-    # 6. Random selection & Cumulative Distribution
+    # 5. Random selection & Cumulative Distribution
     sim_results = np.random.choice(nearest_day_returns, size=simulation_paths)
     
     sim_results.sort()
     below_count = np.searchsorted(sim_results, current_symphony_return)
-    return ((simulation_paths - below_count) / simulation_paths) * 100.0
+    prob_beating = ((simulation_paths - below_count) / simulation_paths) * 100.0
+    
+    below_floor_count = np.searchsorted(sim_results, dynamic_floor)
+    prob_loss_dynamic = (below_floor_count / simulation_paths) * 100.0
+    
+    return prob_beating, prob_loss_dynamic
 
 def calculate_20d_vol(holdings, historical_data):
     """
