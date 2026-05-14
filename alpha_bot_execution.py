@@ -425,6 +425,7 @@ def main():
                 if not s_data.get("removed_by_user", False):
                     print(f"  -> [CIRCUIT BREAKER] Symphony {s_data.get('name', s_id)} missing 2+ times. Flagging removed_by_user=True")
                     s_data["removed_by_user"] = True
+                    database.log_symphony_event(s_id, "Manual Intervention Detected. Tracking safely suspended for the day.", "warning")
                     reporting.send_circuit_breaker_alert(s_data.get("name", s_id), DISCORD_WEBHOOK_URL)
                     state_changed = True
 
@@ -920,6 +921,8 @@ def main():
                                 bot_state[v_id]["triggered_at_stop"] = item["attempted_level"]
                                 bot_state[v_id]["triggered_at_time"] = current_time_str
                                 bot_state[v_id]["high_water_mark"] = -999.0
+                                bot_state[v_id]["prob_loss_dynamic"] = item.get("prob_loss_dynamic")
+                                bot_state[v_id]["dynamic_floor"] = item.get("dynamic_floor")
 
                                 trigger_prices = {}
                                 triggered_basket_snapshot = []
@@ -953,6 +956,7 @@ def main():
                                     prob_loss_dynamic=item.get("prob_loss_dynamic"),
                                     dynamic_floor=item.get("dynamic_floor")
                                 )
+                                database.log_symphony_event(v_id, "Sell-to-Cash Settlement Confirmed", "execution")
                                 print(f"  -> [SETTLED] {item['symphony_name']} successfully moved to cash.")
                                 database.save_state(bot_state)
                             
