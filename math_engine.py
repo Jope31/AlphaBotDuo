@@ -1,6 +1,6 @@
 import numpy as np
 
-def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150):
+def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150, volatility_multiplier=0.5):
     """
     Vectorized Monte Carlo simulation using Nearest Neighbors matching.
     Includes an unconditional bootstrap fallback.
@@ -38,7 +38,7 @@ def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, s
     
     # Dynamic Floor Edge Case: Enforce a minimum safe volatility so floor doesn't collapse to 0
     safe_vol_for_floor = max(symphony_vol, 0.5)
-    dynamic_floor = current_symphony_return - (safe_vol_for_floor * 0.5)
+    dynamic_floor = current_symphony_return - (safe_vol_for_floor * volatility_multiplier)
     below_floor_count_unc = np.searchsorted(unconditional_returns, dynamic_floor)
     unconditional_prob_loss_dynamic = (below_floor_count_unc / simulation_paths) * 100.0
 
