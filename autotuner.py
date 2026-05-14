@@ -155,6 +155,7 @@ def run_autotuner(bot_state, current_date_str, account_uuids, is_forced=False):
                     for tick_idx, tick in enumerate(ticks):
                         ret = tick.get("return", 0.0)
                         mc = tick.get("mc_prob", 50.0)
+                        prob_loss_dynamic = tick.get("prob_loss_dynamic", 0.0)
                         vol = tick.get("vol", 1.0)
                         vwap_diff = tick.get("vwap_diff", 0.0)
                         base_atr_pct = tick.get("base_atr_pct", vol)
@@ -171,7 +172,9 @@ def run_autotuner(bot_state, current_date_str, account_uuids, is_forced=False):
                         # ------------------------------
 
                         if not armed:
-                            if p.get("TAKE_PROFIT_MC_PCT", 5.0) <= mc < p.get("TRIGGER_THRESHOLD_PCT", 15.0): armed = True
+                            # Must meet MC threshold AND downside magnitude risk
+                            if p.get("TAKE_PROFIT_MC_PCT", 5.0) <= mc < p.get("TRIGGER_THRESHOLD_PCT", 15.0) and prob_loss_dynamic >= 25.0: 
+                                armed = True
                         else:
                             if mc > (p.get("TRIGGER_THRESHOLD_PCT", 15.0) * 2) and ret > 0.0:
                                 armed = False
@@ -302,6 +305,7 @@ def run_autotuner(bot_state, current_date_str, account_uuids, is_forced=False):
             p["VWAP_BLEED_TICKS"] = trial.suggest_int("VWAP_BLEED_TICKS", 3, 30)
             p["PARABOLIC_VELOCITY_THRESHOLD"] = trial.suggest_float("PARABOLIC_VELOCITY_THRESHOLD", 1.0, 4.0)
             p["MAX_PARABOLIC_SQUEEZE"] = trial.suggest_float("MAX_PARABOLIC_SQUEEZE", 0.1, 0.8)
+            p["VOLATILITY_MAGNITUDE_MULTIPLIER"] = trial.suggest_float("VOLATILITY_MAGNITUDE_MULTIPLIER", 0.2, 1.0, step=0.1)
 
             acc_sym_ids = [k for k, v in bot_state.items() if isinstance(v, dict) and database.normalize_name(v.get("name", "")) == normalized_name]
             if not acc_sym_ids: return 0.0
