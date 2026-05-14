@@ -427,7 +427,7 @@ def send_eod_discord_post(current_date_str, report_file, optimization_results, d
         print(f"Failed to send EOD Discord webhook: {e}")
 
 def send_discord_alert(
-    symphony_name, current_return, prob_beating, stop_trigger_level, high_water_mark, is_live, discord_webhook_url, exit_reason="Trailing Stop", vwap_bleed_arm_pct=None, vwap_bleed_ticks=None, vwap_diff=None, vwap_breakdown_ticks=None, tp_threshold=None, vwap_bleed_multiplier=None, symphony_vol=None, prob_loss_dynamic=None, dynamic_floor=None
+    symphony_name, current_return, prob_beating, stop_trigger_level, high_water_mark, is_live, discord_webhook_url, exit_reason="Trailing Stop", vwap_bleed_arm_pct=None, vwap_bleed_ticks=None, vwap_diff=None, vwap_breakdown_ticks=None, tp_threshold=None, vwap_bleed_multiplier=None, symphony_vol=None, prob_loss_dynamic=None, dynamic_floor=None, volatility_multiplier=None
 ):
     if not discord_webhook_url:
         return
@@ -468,7 +468,7 @@ def send_discord_alert(
     ]
 
     if exit_reason == "Trailing Stop" and prob_loss_dynamic is not None and dynamic_floor is not None:
-        fields.append({"name": "Downside Risk (Vol-Scaled)", "value": f"{prob_loss_dynamic:.1f}% chance of dropping below {dynamic_floor:.2f}%", "inline": False})
+        fields.append({"name": "Downside Risk (Vol-Scaled)", "value": f"{prob_loss_dynamic:.1f}% chance of dropping below {dynamic_floor:.2f}% (Multiplier: {volatility_multiplier}x)", "inline": False})
 
     if exit_reason == "VWAP Bleed Cut" and vwap_bleed_arm_pct is not None:
         bleed_val = f"Threshold: `{vwap_bleed_arm_pct}%`"
