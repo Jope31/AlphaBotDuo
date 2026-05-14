@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150, volatility_multiplier=0.5):
     """
@@ -167,3 +168,25 @@ def calculate_14d_atr_pct(holdings, historical_data):
             
     portfolio_atr_pct = atr_pct_array.dot(weights)
     return float(portfolio_atr_pct)
+
+def check_parabolic_velocity(current_return, prev_return, threshold):
+    return (current_return - prev_return) >= threshold
+
+def calculate_time_decay_multipliers(time_ratio, mult_open=1.5, mult_close=0.5, min_stop_open=0.3, min_stop_close=0.15):
+    decay = math.log10(1 + 9 * time_ratio)
+    dynamic_multiplier = mult_open - (mult_open - mult_close) * decay
+    dynamic_min_stop = min_stop_open - (min_stop_open - min_stop_close) * decay
+    return dynamic_multiplier, dynamic_min_stop
+
+def calculate_active_stop_distance(safe_vol, dynamic_multiplier, dynamic_min_stop, is_squeezed, max_para_squeeze):
+    distance = max((safe_vol * dynamic_multiplier), dynamic_min_stop)
+    if is_squeezed:
+        distance *= max_para_squeeze
+    return float(distance)
+
+def check_breakeven_activation(current_return, symphony_vol):
+    dynamic_activation = max(0.4, min(3.0, symphony_vol))
+    return current_return >= (dynamic_activation - 0.2)
+
+def calculate_vwap_bleed_threshold(symphony_vol, bleed_multiplier):
+    return max(-3.0, min(-0.5, -(symphony_vol * bleed_multiplier)))
