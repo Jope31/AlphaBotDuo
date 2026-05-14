@@ -586,7 +586,8 @@ def main():
                 safe_hwm = high_water_mark if high_water_mark != -999.0 else current_return
 
                 symphony_vol = math_engine.calculate_20d_vol(holdings, historical_data)
-                prob_beating, prob_loss_dynamic, dynamic_floor = math_engine.run_monte_carlo(holdings, historical_data, spy_today, symphony_vol, SIMULATION_PATHS, NEIGHBOR_K)
+                vol_mult = acc_params.get("VOLATILITY_MAGNITUDE_MULTIPLIER", 0.5)
+                prob_beating, prob_loss_dynamic, dynamic_floor = math_engine.run_monte_carlo(holdings, historical_data, spy_today, symphony_vol, SIMULATION_PATHS, NEIGHBOR_K, volatility_multiplier=vol_mult)
 
                 raw_dynamic_bleed = -(symphony_vol * acc_VWAP_BLEED_MULTIPLIER)
                 acc_VWAP_BLEED_ARM_PCT = max(-3.0, min(-0.5, raw_dynamic_bleed))
@@ -819,7 +820,8 @@ def main():
                         "vwap_ticks": bot_state[symphony_id]["vwap_ticks"],
                         "acc_TAKE_PROFIT_MC_PCT": acc_TAKE_PROFIT_MC_PCT,
                         "prob_loss_dynamic": prob_loss_dynamic,
-                        "dynamic_floor": dynamic_floor
+                        "dynamic_floor": dynamic_floor,
+                        "acc_VOLATILITY_MAGNITUDE_MULTIPLIER": vol_mult
                     })
 
         # Process Execution Queue
@@ -954,7 +956,8 @@ def main():
                                     vwap_bleed_multiplier=item.get("acc_VWAP_BLEED_MULTIPLIER"),
                                     symphony_vol=item.get("symphony_vol"),
                                     prob_loss_dynamic=item.get("prob_loss_dynamic"),
-                                    dynamic_floor=item.get("dynamic_floor")
+                                    dynamic_floor=item.get("dynamic_floor"),
+                                    volatility_multiplier=item.get("acc_VOLATILITY_MAGNITUDE_MULTIPLIER")
                                 )
                                 database.log_symphony_event(v_id, "Sell-to-Cash Settlement Confirmed", "execution")
                                 print(f"  -> [SETTLED] {item['symphony_name']} successfully moved to cash.")
