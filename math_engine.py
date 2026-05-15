@@ -25,15 +25,11 @@ BREAKEVEN_ACTIVATION_BUFFER = 0.2
 VWAP_BLEED_FLOOR = -3.0
 VWAP_BLEED_CEILING = -0.5
 
-def run_monte_carlo(holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150, volatility_multiplier=0.5):
+def run_monte_carlo(current_symphony_return, holdings, historical_data, spy_today_return, symphony_vol, simulation_paths=5000, neighbor_k=150, volatility_multiplier=0.5):
     """
     Vectorized Monte Carlo simulation using Nearest Neighbors matching.
     Includes an unconditional bootstrap fallback.
     """
-    current_symphony_return = sum(
-        (h.get("last_percent_change", 0.0) * PERCENT_CONVERSION) * h.get("allocation", 0.0)
-        for h in holdings if h.get("last_percent_change") is not None
-    )
     valid_dates = sorted(list(historical_data.keys()))
     if len(valid_dates) < VOLATILITY_WINDOW_DAYS:
         return 100.0, 0.0, 0.0
