@@ -512,6 +512,11 @@ def main():
                 acc_VWAP_CROSS_HWM_PCT = acc_params.get("VWAP_CROSS_HWM_PCT", VWAP_CROSS_HWM_PCT)
                 acc_VWAP_BLEED_MULTIPLIER = acc_params.get("VWAP_BLEED_MULTIPLIER", 1.5)
                 acc_VWAP_BLEED_TICKS = acc_params.get("VWAP_BLEED_TICKS", 10)
+                
+                acc_GAP_DEFENSE_THRESHOLD_PCT = acc_params.get("GAP_DEFENSE_THRESHOLD_PCT", 2.5)
+                acc_GAP_DEFENSE_MULTIPLIER = acc_params.get("GAP_DEFENSE_MULTIPLIER", 0.5)
+                
+                bot_state[symphony_id].setdefault("gap_defense_locked", False)
 
 
 
@@ -624,10 +629,20 @@ def main():
 
                 # --- PARABOLIC SQUEEZE LOGIC ---
                 prev_return = bot_state[symphony_id].get("prev_return", current_return)
-                velocity = current_return - prev_return
                 
-                para_threshold = acc_params.get("PARABOLIC_VELOCITY_THRESHOLD", PARABOLIC_VELOCITY_THRESHOLD)
-                is_para = math_engine.check_parabolic_velocity(current_return, prev_return, para_threshold)
+                if prev_return is None:
+                    if current_return >= acc_GAP_DEFENSE_THRESHOLD_PCT:
+                        bot_state[symphony_id]["gap_defense_locked"] = True
+                        print(f"  🛡️ {symphony_name} MORNING GAP DEFENSE ACTIVATED (Gap: {current_return:.2f}% >= Threshold: {acc_GAP_DEFENSE_THRESHOLD_PCT}%)")
+                        database.log_symphony_event(symphony_id, f"{symphony_name} MORNING GAP DEFENSE ACTIVATED (Gap: {current_return:.2f}%)", "gap-defense", current_date_str)
+                    prev_return = current_return
+                    velocity = 0.0
+                    is_para = False
+                else:
+                    velocity = current_return - prev_return
+                    para_threshold = acc_params.get("PARABOLIC_VELOCITY_THRESHOLD", PARABOLIC_VELOCITY_THRESHOLD)
+                    is_para = math_engine.check_parabolic_velocity(current_return, prev_return, para_threshold)
+                    
                 bot_state[symphony_id]["prev_return"] = current_return
 
                 if is_para:
@@ -647,6 +662,8 @@ def main():
                 safe_vol = symphony_vol if symphony_vol > 0 else 1.0
                 is_squeezed = bot_state[symphony_id].get("para_armed") or bot_state[symphony_id].get("breakeven_locked")
                 active_trailing_stop = math_engine.calculate_active_stop_distance(safe_vol, dynamic_multiplier, dynamic_min_stop, is_squeezed, acc_params.get("MAX_PARABOLIC_SQUEEZE", MAX_PARABOLIC_SQUEEZE))
+                if bot_state[symphony_id].get("gap_defense_locked"):
+                    active_trailing_stop *= acc_GAP_DEFENSE_MULTIPLIER
 
                 base_stop_level = safe_hwm - active_trailing_stop
 
@@ -662,6 +679,10 @@ def main():
                     stop_trigger_level = max(base_stop_level, 0.0)
                 else:
                     stop_trigger_level = base_stop_level
+
+                highest_stop = bot_state[symphony_id].get("highest_stop_level", -999.0)
+                stop_trigger_level = max(stop_trigger_level, highest_stop)
+                bot_state[symphony_id]["highest_stop_level"] = stop_trigger_level
 
                 if bot_state[symphony_id]["triggered"]:
                     stop_trigger_level = -999.0
