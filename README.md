@@ -1,4 +1,4 @@
-# AlphaBot v3.2
+# AlphaBot v3.3
 
 ## Summary
 
@@ -21,7 +21,7 @@ AlphaBot achieves its goals through a sophisticated combination of data ingestio
 * **Volatility Scaling:** Calculates an active trailing stop distance based strictly on the portfolio's 20-day volatility.
 * **Strict Monotonicity Ratchet:** Mathematically enforces that a trailing stop can never drop or move backwards tick-to-tick, safely ratcheting the absolute stop level upward even during sudden intraday volatility spikes.
 * **Logarithmic Time Squeeze:** Shrinks the trailing stop distance smoothly and predictably based on the time of day using a logarithmic decay curve. The dynamic multiplier decays from 1.5x at the open to 0.5x by the close.
-* **Morning Gap Defense:** Instantly detects exceptional overnight gap-ups on the opening tick using the `GAP_DEFENSE_THRESHOLD_PCT`. If triggered, it permanently locks into a high-alert protection mode, tightening the trailing stop using the `GAP_DEFENSE_MULTIPLIER` for the remainder of the session to maximize windfall retention without confusing active intraday momentum logic.
+* **(NEW) Morning Gap Defense:** Instantly detects exceptional overnight gap-ups on the opening tick using the `GAP_DEFENSE_THRESHOLD_PCT`. If triggered, it permanently locks into a high-alert protection mode, tightening the trailing stop using the `GAP_DEFENSE_MULTIPLIER` for the remainder of the session to maximize windfall retention without confusing active intraday momentum logic.
 * **Parabolic Squeeze Ratchet:** Measures tick-by-tick *intraday* return velocity (explicitly decoupled from overnight gaps). If the velocity exceeds the `PARABOLIC_VELOCITY_THRESHOLD`, the engine permanently ratchets the trailing stop tighter using the `MAX_PARABOLIC_SQUEEZE` multiplier to protect the peak.
 * **Risk Guard (Breakeven Lock):** To lock the absolute downside floor to breakeven (0.0%), the live return must hold above a dynamically calculated activation threshold (clamped between 0.4% and 3.0%) for 5 consecutive ticks.
 * **Monte Carlo State Engine:** Runs thousands of vectorized, deterministic Monte Carlo simulations to calculate the probability of the symphony beating its current return, as well as evaluating a dynamic, volatility-scaled downside magnitude gate to filter out false-positive arms. It dictates state-switching by arming defensive trailing stops when the probability falls below the `TRIGGER_THRESHOLD_PCT` and triggering take-profit traps when it falls below the `TAKE_PROFIT_MC_PCT`.
