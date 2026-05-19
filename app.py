@@ -76,6 +76,13 @@ def get_state():
 
         active_uuids = [uid for uid in [acc_ind, acc_roth, acc_trad] if uid]
 
+        account_totals = state_data.get("account_totals", {})
+        account_balances = {
+            "MANUAL_BAL_IND": account_totals.get(acc_ind, 0.0),
+            "MANUAL_BAL_ROTH": account_totals.get(acc_roth, 0.0),
+            "MANUAL_BAL_TRAD": account_totals.get(acc_trad, 0.0)
+        }
+
         # Render HTML for UI
         symphony_keys = [k for k in state_data.keys() if isinstance(state_data[k], dict)]
         accounts_map = {}
@@ -133,7 +140,8 @@ def get_state():
             "live_mode": live_mode,
             "execution_start_time": env_vars.get("EXECUTION_START_TIME", "09:30"),
             "next_run_seconds": next_run_seconds,
-            "html": rendered_html
+            "html": rendered_html,
+            "account_balances": account_balances
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -336,6 +344,9 @@ def get_settings():
         "ACCOUNT_INDIVIDUAL": env_vars.get("ACCOUNT_INDIVIDUAL", ""),
         "ACCOUNT_ROTH": env_vars.get("ACCOUNT_ROTH", ""),
         "ACCOUNT_TRAD": env_vars.get("ACCOUNT_TRAD", ""),
+        "MANUAL_BAL_IND": env_vars.get("MANUAL_BAL_IND", ""),
+        "MANUAL_BAL_ROTH": env_vars.get("MANUAL_BAL_ROTH", ""),
+        "MANUAL_BAL_TRAD": env_vars.get("MANUAL_BAL_TRAD", ""),
         "DISCORD_WEBHOOK_URL": env_vars.get("DISCORD_WEBHOOK_URL", ""),
     }
 
