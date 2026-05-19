@@ -87,7 +87,14 @@ def fetch_symphony_stats(account_id):
         time.sleep(1.5)
         if response.status_code == 200:
             try:
-                return response.json().get("symphonies", [])
+                data = response.json()
+                symphonies = data.get("symphonies", [])
+                if symphonies:
+                    print(f"\n--- DEBUG: COMPOSER API PAYLOAD ({account_id}) ---")
+                    import json
+                    print(json.dumps(symphonies[0], indent=2))
+                    print("--------------------------------------------------\n")
+                return symphonies
             except ValueError:
                 print(f"Warning: Failed to decode JSON from Composer API (HTTP 200) for account {account_id}. Returning [].")
                 return []
@@ -95,6 +102,17 @@ def fetch_symphony_stats(account_id):
     except requests.RequestException as e:
         print(f"Exception fetching account {account_id}: {e}")
     return []
+
+def fetch_account_total_stats(account_id):
+    url = f"{COMPOSER_BASE_URL}/portfolio/accounts/{account_id}/total-stats"
+    try:
+        response = requests.get(url, headers=get_composer_headers(), timeout=10)
+        time.sleep(1.0)
+        if response.status_code == 200:
+            return response.json()
+    except requests.RequestException as e:
+        print(f"Error fetching total stats for {account_id}: {e}")
+    return {}
 
 def execute_sell_to_cash(actual_symphony_id, account_id, bot_state=None, sym_id=None):
     url = f"{COMPOSER_BASE_URL}/deploy/accounts/{account_id}/symphonies/{actual_symphony_id}/go-to-cash"
@@ -386,10 +404,19 @@ def main():
 
         all_tickers = set()
         symphony_data_cache = {}
+        
+        if "account_totals" not in bot_state:
+            bot_state["account_totals"] = {}
 
         for account in ACCOUNT_UUIDS:
             symphonies = fetch_symphony_stats(account)
             symphony_data_cache[account] = symphonies
+            
+            # Fetch automated account totals
+            t_stats = fetch_account_total_stats(account)
+            if t_stats and "portfolio_value" in t_stats:
+                bot_state["account_totals"][account] = t_stats["portfolio_value"]
+
             for sym in symphonies:
                 for holding in sym.get("holdings", []):
                     raw_ticker = holding.get("ticker", "")
@@ -765,7 +792,10 @@ def main():
                 bot_state[symphony_id]["stop_trigger"] = stop_trigger_level
                 bot_state[symphony_id]["active_stop_distance"] = active_trailing_stop
                 bot_state[symphony_id]["symphony_vol"] = symphony_vol
-                bot_state[symphony_id]["current_value"] = sym.get("current_value", sym.get("value", 0.0))
+                sym_val = sym.get("current_value", sym.get("value", 0.0))
+                if sym_val == 0.0:
+                    sym_val = sum(h.get("value", 0.0) for h in holdings)
+                bot_state[symphony_id]["current_value"] = sym_val
                 if not bot_state[symphony_id].get("triggered"):
                     bot_state[symphony_id]["current_holdings"] = [{"ticker": h.get("ticker"), "allocation": h.get("allocation", 0.0)} for h in holdings]
 
