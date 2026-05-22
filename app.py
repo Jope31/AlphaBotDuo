@@ -6,6 +6,7 @@ import time
 import threading
 import subprocess
 from datetime import datetime
+import json
 import schedule
 import requests
 import logging
@@ -31,6 +32,14 @@ def trigger_alpha_bot(force=False):
             cmd.append("--force")
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        # Reload latest .env configurations into subprocess environment
+        try:
+            env_latest = dotenv_values(ENV_FILE_PATH)
+            for k, v in env_latest.items():
+                if v is not None:
+                    env[k] = str(v)
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Warning: Failed to reload .env for child process: {e}")
         subprocess.run(cmd, check=True, env=env)
     except subprocess.CalledProcessError as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Execution failed: {e}")
@@ -195,6 +204,9 @@ def manual_trigger():
 
 @app.route("/api/force_eod", methods=["POST"])
 def force_eod():
+    if not database.acquire_lock(lease_duration=900):
+        return jsonify({"status": "error", "message": "Database currently locked by active execution. Please wait."}), 409
+
     try:
         from datetime import datetime, timedelta
         bot_state = database.load_state()
@@ -211,18 +223,22 @@ def force_eod():
         discord_webhook = env_vars.get("DISCORD_WEBHOOK_URL", "")
 
         def run_eod_tasks():
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Forcing EOD Analysis for {prev_date_str}...")
-            import reporting
-            import autotuner
-            reporting.generate_eod_snapshot(bot_state, prev_date_str, is_post_rebalance=False, discord_webhook_url=discord_webhook)
-            reporting.generate_eod_snapshot(bot_state, prev_date_str, is_post_rebalance=True, discord_webhook_url=discord_webhook)
-            autotuner_changes = autotuner.run_autotuner(bot_state, prev_date_str, account_uuids, is_forced=True)
-            reporting.send_eod_discord_post(prev_date_str, f"post_mortem_{prev_date_str}.json", autotuner_changes, discord_webhook)
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Forced EOD Analysis complete.")
+            try:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Forcing EOD Analysis for {prev_date_str}...")
+                import reporting
+                import autotuner
+                reporting.generate_eod_snapshot(bot_state, prev_date_str, is_post_rebalance=False, discord_webhook_url=discord_webhook)
+                reporting.generate_eod_snapshot(bot_state, prev_date_str, is_post_rebalance=True, discord_webhook_url=discord_webhook)
+                autotuner_changes = autotuner.run_autotuner(bot_state, prev_date_str, account_uuids, is_forced=True)
+                reporting.send_eod_discord_post(prev_date_str, f"post_mortem_{prev_date_str}.json", autotuner_changes, discord_webhook)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Forced EOD Analysis complete.")
+            finally:
+                database.release_lock()
 
         threading.Thread(target=run_eod_tasks, daemon=True).start()
         return jsonify({"status": "success", "message": "EOD Analysis initiated for " + prev_date_str})
     except Exception as e:
+        database.release_lock()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/resend_discord", methods=["POST"])
@@ -248,6 +264,186 @@ def resend_discord():
         return jsonify({"status": "success", "message": "Discord push initiated for " + prev_date_str})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/performance_benchmark")
+def get_performance_benchmark():
+    try:
+        from dotenv import dotenv_values
+        import math
+        
+        env_vars = dotenv_values(".env")
+        acc_ind = env_vars.get("ACCOUNT_INDIVIDUAL", "").strip()
+        acc_roth = env_vars.get("ACCOUNT_ROTH", "").strip()
+        acc_trad = env_vars.get("ACCOUNT_TRAD", "").strip()
+        
+        # Load state to get current values & account mapping
+        state_data = database.load_state()
+        if not state_data:
+            return jsonify({"status": "error", "message": "Bot state not initialized."}), 400
+            
+        sym_to_acc = {}
+        sym_weights = {}
+        account_balances = {acc_ind: 0.0, acc_roth: 0.0, acc_trad: 0.0, "": 0.0}
+        
+        for sym_id, sym in state_data.items():
+            if isinstance(sym, dict) and "account" in sym:
+                acc_id = sym["account"]
+                sym_to_acc[sym_id] = acc_id
+                try:
+                    val = float(sym.get("current_value", 0.0))
+                except:
+                    val = 1.0
+                if val <= 0:
+                    val = 1.0
+                sym_weights[sym_id] = val
+                account_balances[acc_id] = account_balances.get(acc_id, 0.0) + val
+
+        # Get last 30 trading dates from chart_archive
+        conn = database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT date FROM chart_archive ORDER BY date DESC LIMIT 30")
+        dates = sorted([row[0] for row in cursor.fetchall()])
+        
+        if not dates:
+            conn.close()
+            return jsonify({
+                "dates": [],
+                "accounts": {
+                    "ind": {"strat_series": [], "held_series": [], "total_return_pct": 0, "if_held_pct": 0, "total_return_usd": 0, "if_held_usd": 0},
+                    "roth": {"strat_series": [], "held_series": [], "total_return_pct": 0, "if_held_pct": 0, "total_return_usd": 0, "if_held_usd": 0},
+                    "trad": {"strat_series": [], "held_series": [], "total_return_pct": 0, "if_held_pct": 0, "total_return_usd": 0, "if_held_usd": 0},
+                    "total": {"strat_series": [], "held_series": [], "total_return_pct": 0, "if_held_pct": 0, "total_return_usd": 0, "if_held_usd": 0}
+                }
+            })
+
+        # Load chart data for these dates
+        placeholders = ",".join("?" * len(dates))
+        cursor.execute(f"SELECT date, symphony_id, data FROM chart_archive WHERE date IN ({placeholders})", dates)
+        
+        archive_data = {} # {date: {sym_id: ticks}}
+        for row in cursor.fetchall():
+            date_str, sym_id, data_json = row[0], row[1], row[2]
+            if date_str not in archive_data:
+                archive_data[date_str] = {}
+            try:
+                archive_data[date_str][sym_id] = json.loads(data_json)
+            except:
+                pass
+        conn.close()
+
+        # Initialize daily returns for each account and total
+        uuid_to_key = {}
+        if acc_ind: uuid_to_key[acc_ind] = 'ind'
+        if acc_roth: uuid_to_key[acc_roth] = 'roth'
+        if acc_trad: uuid_to_key[acc_trad] = 'trad'
+        
+        daily_returns = {
+            'ind': [],
+            'roth': [],
+            'trad': [],
+            'total': []
+        }
+        
+        for date_str in dates:
+            day_syms = archive_data.get(date_str, {})
+            
+            agg = {
+                'ind': {'strat': 0.0, 'held': 0.0, 'weight': 0.0},
+                'roth': {'strat': 0.0, 'held': 0.0, 'weight': 0.0},
+                'trad': {'strat': 0.0, 'held': 0.0, 'weight': 0.0},
+                'total': {'strat': 0.0, 'held': 0.0, 'weight': 0.0}
+            }
+            
+            for sym_id, ticks in day_syms.items():
+                if not ticks or sym_id not in sym_to_acc:
+                    continue
+                
+                acc_id = sym_to_acc[sym_id]
+                key = uuid_to_key.get(acc_id)
+                weight = sym_weights.get(sym_id, 1.0)
+                
+                held_ret = ticks[-1].get("return", 0.0)
+                strat_ret = held_ret
+                for tick in ticks:
+                    if tick.get("event") in ["Take-Profit", "Trailing Stop", "VWAP Breakdown", "VWAP Bleed Cut"]:
+                        strat_ret = tick.get("return", 0.0)
+                        break
+                
+                if key:
+                    agg[key]['strat'] += strat_ret * weight
+                    agg[key]['held'] += held_ret * weight
+                    agg[key]['weight'] += weight
+                    
+                agg['total']['strat'] += strat_ret * weight
+                agg['total']['held'] += held_ret * weight
+                agg['total']['weight'] += weight
+                
+            for k in ['ind', 'roth', 'trad', 'total']:
+                w = agg[k]['weight']
+                if w > 0:
+                    daily_returns[k].append({
+                        'date': date_str,
+                        'strat': agg[k]['strat'] / w,
+                        'held': agg[k]['held'] / w
+                    })
+                else:
+                    daily_returns[k].append({
+                        'date': date_str,
+                        'strat': 0.0,
+                        'held': 0.0
+                    })
+                    
+        results = {
+            "dates": [d[5:] for d in dates], # format as MM-DD
+            "accounts": {}
+        }
+        
+        usd_balances = {
+            'ind': account_balances.get(acc_ind, 0.0),
+            'roth': account_balances.get(acc_roth, 0.0),
+            'trad': account_balances.get(acc_trad, 0.0),
+            'total': sum(account_balances.values())
+        }
+        
+        for k in ['ind', 'roth', 'trad', 'total']:
+            strat_mult = 1.0
+            held_mult = 1.0
+            
+            strat_series = []
+            held_series = []
+            
+            for day in daily_returns[k]:
+                strat_mult *= (1.0 + day['strat'] / 100.0)
+                held_mult *= (1.0 + day['held'] / 100.0)
+                
+                strat_series.append(round((strat_mult - 1.0) * 100.0, 2))
+                held_series.append(round((held_mult - 1.0) * 100.0, 2))
+                
+            final_strat_pct = strat_series[-1] if strat_series else 0.0
+            final_held_pct = held_series[-1] if held_series else 0.0
+            
+            current_bal = usd_balances[k]
+            if final_strat_pct > -100.0:
+                b_start = current_bal / (1.0 + final_strat_pct / 100.0)
+            else:
+                b_start = 0.0
+                
+            strat_usd = current_bal - b_start
+            held_usd = b_start * (final_held_pct / 100.0)
+            
+            results["accounts"][k] = {
+                "strat_series": strat_series,
+                "held_series": held_series,
+                "total_return_pct": round(final_strat_pct, 2),
+                "if_held_pct": round(final_held_pct, 2),
+                "total_return_usd": round(strat_usd, 2),
+                "if_held_usd": round(held_usd, 2)
+            }
+            
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/api/history/<int:days>")
 def get_history(days):
@@ -329,6 +525,31 @@ def sell_account():
         return jsonify({"status": "success", "message": "Liquidation initiated."})
     return jsonify({"status": "error", "message": "Missing credentials or account ID."}), 400
 
+@app.route("/api/portfolio_overhaul", methods=["POST"])
+def portfolio_overhaul():
+    import threading
+    data = request.json
+    account_id = data.get("account_id")
+
+    if not account_id:
+        return jsonify({"status": "error", "message": "Missing account ID payload."}), 400
+        
+    if not database.acquire_lock(lease_duration=300):
+        return jsonify({"status": "error", "message": "Database currently locked by active execution loop. Try again in 60s."}), 409
+        
+    try:
+        def overhaul_worker():
+            try:
+                database.execute_system_flush(account_id)
+            finally:
+                database.release_lock()
+                
+        threading.Thread(target=overhaul_worker, daemon=True).start()
+        return jsonify({"status": "success", "message": "Ecosystem flush and synchronization successfully initiated in background thread."})
+    except Exception as e:
+        database.release_lock()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # --- 4. Tabbed Settings / Control Panel Routes ---
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
@@ -342,11 +563,11 @@ def get_settings():
         "ALPACA_KEY": env_vars.get("ALPACA_KEY", ""),
         "ALPACA_SECRET": env_vars.get("ALPACA_SECRET", ""),
         "ACCOUNT_INDIVIDUAL": env_vars.get("ACCOUNT_INDIVIDUAL", ""),
+        "ACCOUNT_INDIVIDUAL_ENABLED": env_vars.get("ACCOUNT_INDIVIDUAL_ENABLED", "True"),
         "ACCOUNT_ROTH": env_vars.get("ACCOUNT_ROTH", ""),
+        "ACCOUNT_ROTH_ENABLED": env_vars.get("ACCOUNT_ROTH_ENABLED", "True"),
         "ACCOUNT_TRAD": env_vars.get("ACCOUNT_TRAD", ""),
-        "MANUAL_BAL_IND": env_vars.get("MANUAL_BAL_IND", ""),
-        "MANUAL_BAL_ROTH": env_vars.get("MANUAL_BAL_ROTH", ""),
-        "MANUAL_BAL_TRAD": env_vars.get("MANUAL_BAL_TRAD", ""),
+        "ACCOUNT_TRAD_ENABLED": env_vars.get("ACCOUNT_TRAD_ENABLED", "True"),
         "DISCORD_WEBHOOK_URL": env_vars.get("DISCORD_WEBHOOK_URL", ""),
     }
 
@@ -366,27 +587,54 @@ def get_settings():
 @app.route("/api/settings", methods=["POST"])
 def save_settings():
     """Saves Globals to .env and Symphony Strategies to SQLite."""
-    payload = request.json
+    if not database.acquire_lock(lease_duration=15):
+        return jsonify({"status": "error", "message": "Cannot save configurations while the bot is executing real-time calculations. Please wait 15 seconds."}), 409
 
+    payload = request.json
     try:
         # Save Globals
         for key, val in payload.get("globals", {}).items():
-            set_key(ENV_FILE_PATH, key, str(val))
+            cleaned_val = str(val).strip()
+            if cleaned_val:
+                try:
+                    # Let's check if it represents a float and is not a UUID (containing multiple dashes)
+                    if "-" not in cleaned_val or (cleaned_val.startswith("-") and cleaned_val.count("-") == 1):
+                        f_val = float(cleaned_val)
+                        if f_val.is_integer():
+                            cleaned_val = str(int(f_val))
+                        else:
+                            cleaned_val = f"{f_val:.4f}"
+                except ValueError:
+                    pass
+            set_key(ENV_FILE_PATH, key, cleaned_val)
+            os.environ[key] = cleaned_val
 
         # Save Symphony Strategies
         for sym_name, strategy_data in payload.get("symphonies", {}).items():
-            params = {k: float(v) for k, v in strategy_data.get("params", {}).items()}
+            params = {}
+            for k, v in strategy_data.get("params", {}).items():
+                if v is not None and str(v).strip() != "":
+                    try:
+                        val = float(v)
+                        if val.is_integer():
+                            params[k] = int(val)
+                        else:
+                            params[k] = round(val, 4)
+                    except ValueError:
+                        pass
             locked = strategy_data.get("locked_vars", [])
             database.save_symphony_strategy(sym_name, params, locked)
 
         return jsonify({"status": "success", "message": "Variables updated successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        database.release_lock()
 
 if __name__ == "__main__":
     # Start the scheduler thread
     threading.Thread(target=run_scheduler, daemon=True).start()
-    print("\n🚀 Starting Alpha Bot Control Center at http://localhost:5000\n")
+    print("\nStarting Alpha Bot Control Center at http://localhost:5000\n")
     
     # Disable use_reloader to ensure the background thread runs once and only once
     app.run(port=5000, debug=False, use_reloader=False)
