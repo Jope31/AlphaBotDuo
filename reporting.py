@@ -117,7 +117,7 @@ def generate_eod_snapshot(bot_state, current_date_str, is_post_rebalance=False, 
 
             for holding in sym.get("current_holdings", []):
                 ticker = holding.get("ticker", "UNKNOWN")
-                weight = holding.get("allocation", 0.0)
+                weight = holding.get("weight", holding.get("allocation", 0.0))
                 if ticker not in portfolio_holdings_summary:
                     portfolio_holdings_summary[ticker] = 0.0
                 portfolio_holdings_summary[ticker] += weight
