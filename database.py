@@ -11,16 +11,23 @@ DB_FILE = "alphabot_state.db"
 DEFAULT_STRATEGY = {
     "TRIGGER_THRESHOLD_PCT": 15.0,
     "TAKE_PROFIT_MC_PCT": 5.0,
-    "MAX_SQUEEZE_FLOOR": 0.20,
     "VWAP_CROSS_HWM_PCT": 1.0,
+    "VOLATILITY_MAGNITUDE_MULTIPLIER": 1.5,
+    "VOLATILITY_CLOSE_MULTIPLIER": 0.5,
     "PARABOLIC_VELOCITY_THRESHOLD": 2.0,
     "MAX_PARABOLIC_SQUEEZE": 0.50,
+    "GAP_DEFENSE_THRESHOLD_PCT": 2.5, # Retained for global UI matching baseline but no-op in loop
+    "GAP_DEFENSE_MULTIPLIER": 0.5,
+    "BREAKEVEN_VOL_MIN": 0.4,
+    "BREAKEVEN_VOL_MAX": 3.0,
+    "CATASTROPHIC_DROP_PCT": 0.75,
+    "VWAP_BAND_MULTIPLIER": 0.10,
     "VWAP_BLEED_MULTIPLIER": 1.5,
     "VWAP_BLEED_TICKS": 10,
     "VWAP_BLEED_DECAY_RATE": 60,
-    "VOLATILITY_MAGNITUDE_MULTIPLIER": 0.5,
-    "GAP_DEFENSE_THRESHOLD_PCT": 2.5,
-    "GAP_DEFENSE_MULTIPLIER": 0.5
+    "MC_W1": 1.0,
+    "MC_W2": 1.0,
+    "MC_W3": 1.0
 }
 
 # By default, we lock the non-user-specified variables so BO only tunes the requested
@@ -126,15 +133,16 @@ def wipe_transient_state(state_dict):
             s_data["prev_return"] = None
             s_data["armed"] = False
             s_data["tp_armed"] = False
-            s_data["gap_defense_locked"] = False
             s_data["para_armed"] = False
             s_data["triggered"] = False
             s_data["breakeven_locked"] = False
+            s_data["lowest_mc_seen"] = 100.0
+            s_data["lock_engaged_ticks"] = 0
+            s_data["lock_engaged_at"] = None
+            s_data["below_lock_count"] = 0
             s_data["below_stop_count"] = 0
             s_data["above_tp_count"] = 0
             s_data["vwap_ticks"] = 0
-            s_data["vwap_bleed_ticks"] = 0
-            s_data["vwap_trapped_ticks"] = 0
             s_data["hwm_hold_ticks"] = 0
             s_data["mc_history"] = []
             
@@ -291,7 +299,7 @@ def log_symphony_event(symphony_id, message, event_type="info", date_str=None):
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump(logs, f)
     except Exception as e:
-        print(f"Error saving symphony logs to {log_file}: {e}")
+        print(f"Error saving symphony logs to {log_file}: {e}", flush=True)
 
 # Initialize tables on import
 init_db()
@@ -301,7 +309,7 @@ def execute_system_flush(account_id):
     import os
     import json
     
-    print(f"[OVERHAUL] Commencing clean slate protocol for account: {account_id}")
+    print(f"[OVERHAUL] Commencing clean slate protocol for account: {account_id}", flush=True)
     
     # 1. Fetch the fresh active holdings payload from Composer
     live_symphonies = alpha_bot_execution.fetch_symphony_stats(account_id)
@@ -316,13 +324,13 @@ def execute_system_flush(account_id):
         if s_id in ["account_totals", "date", "last_execution_mode", "post_mortem_run"]:
             continue
         if isinstance(s_data, dict) and s_data.get("account") == account_id:
-            if s_id not in active_live_ids:
+            if s_id not in active_live_ids and not s_data.get("triggered"):
                 keys_to_delete.append(s_id)
                 
     # Purge completely deleted ghost symphonies from transient memory
     for s_id in keys_to_delete:
         sym_name = bot_state[s_id].get("name", s_id)
-        print(f"  -> Completely removed ghost symphony from state memory: {sym_name} ({s_id})")
+        print(f"  -> Completely removed ghost symphony from state memory: {sym_name} ({s_id})", flush=True)
         del bot_state[s_id]
         
     # Surgical Flush: Reset ONLY session runtime trackers for re-invested symphonies
@@ -331,7 +339,7 @@ def execute_system_flush(account_id):
         if s_id in ["account_totals", "date", "last_execution_mode", "post_mortem_run"]:
             continue
         if isinstance(s_data, dict) and s_data.get("account") == account_id:
-            print(f"  -> Resetting runtime tracking registers for re-invested symphony: {s_data.get('name')}")
+            print(f"  -> Resetting runtime tracking registers for re-invested symphony: {s_data.get('name')}", flush=True)
             s_data["high_water_mark"] = -999.0
             s_data["shadow_hwm"] = -999.0
             s_data["highest_stop_level"] = -999.0
@@ -339,14 +347,15 @@ def execute_system_flush(account_id):
             s_data["triggered"] = False
             s_data["armed"] = False
             s_data["tp_armed"] = False
-            s_data["gap_defense_locked"] = False
             s_data["para_armed"] = False
             s_data["breakeven_locked"] = False
+            s_data["lowest_mc_seen"] = 100.0
+            s_data["lock_engaged_ticks"] = 0
+            s_data["lock_engaged_at"] = None
+            s_data["below_lock_count"] = 0
             s_data["below_stop_count"] = 0
             s_data["above_tp_count"] = 0
             s_data["vwap_ticks"] = 0
-            s_data["vwap_bleed_ticks"] = 0
-            s_data["vwap_trapped_ticks"] = 0
             s_data["hwm_hold_ticks"] = 0
             s_data["mc_history"] = []
             
@@ -368,7 +377,7 @@ def execute_system_flush(account_id):
     state_names = {normalize_name(v.get("name", "")) for v in bot_state.values() if isinstance(v, dict)}
     for stored_name in stored_names:
         if stored_name not in state_names:
-            print(f"  -> Pruning old unused strategy tuning configuration panel for: {stored_name}")
+            print(f"  -> Pruning old unused strategy tuning configuration panel for: {stored_name}", flush=True)
             cursor.execute("DELETE FROM symphony_strategies WHERE symphony_name = ?", (stored_name,))
     conn.commit()
     conn.close()
@@ -377,26 +386,24 @@ def execute_system_flush(account_id):
     if os.path.exists("history_cache.json"):
         try:
             os.remove("history_cache.json")
-            print("  -> Invalidated global historical cache to refresh synthetic simulations.")
+            print("  -> Invalidated global historical cache to refresh synthetic simulations.", flush=True)
         except Exception as e:
-            print(f"  -> Cache removal skipped: {e}")
+            print(f"  -> Cache removal skipped: {e}", flush=True)
             
-    # 5. Clear active lines for this account from chart_history to prevent visualization bleed
+    # 5. Clear ONLY ghost symphonies from chart_history to prevent visualization bleed
     chart_history = load_chart_history()
     if isinstance(chart_history.get("symphonies"), dict):
         for s_id in keys_to_delete:
             if s_id in chart_history["symphonies"]:
                 del chart_history["symphonies"][s_id]
-        for s_id in active_live_ids:
-            if s_id in chart_history["symphonies"]:
-                chart_history["symphonies"][s_id] = []
+        # REMOVED: Wiping active_live_ids chart history so data persists across app restarts
         save_chart_history(chart_history)
         
     # 6. Instant asset proxy initialization for newly funded symphonies
-    print("  -> Initializing sector proxy maps for newly funded positions...")
+    print("  -> Initializing sector proxy maps for newly funded positions...", flush=True)
     try:
         alpha_bot_execution.run_morning_initialization()
     except Exception as e:
-        print(f"  -> Asset proxy mapping skipped: {e}")
+        print(f"  -> Asset proxy mapping skipped: {e}", flush=True)
 
-    print(f"[OVERHAUL] Synchronization and system flush complete for account {account_id[:8]}.")
+    print(f"[OVERHAUL] Synchronization and system flush complete for account {account_id[:8]}.", flush=True)
