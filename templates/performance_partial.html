@@ -1,0 +1,107 @@
+<div id="performance-tab" class="main-tab-pane space-y-6 hidden">
+            <!-- Account Balances Row (Spacious) -->
+            <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Individual Account Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-ind-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-ind-perf" checked onchange="syncChartCheckbox(this, 'chart-toggle-ind')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-ind-perf" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Individual Account</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-ind-perf" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-ind-perf">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-ind-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-ind-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Roth IRA Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-roth-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-roth-perf" checked onchange="syncChartCheckbox(this, 'chart-toggle-roth')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-roth-perf" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Roth IRA</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-roth-perf" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-roth-perf">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-roth-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-roth-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Trad. IRA Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-trad-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-trad-perf" checked onchange="syncChartCheckbox(this, 'chart-toggle-trad')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-trad-perf" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Trad. IRA</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-trad-perf" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-trad-perf">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-trad-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-trad-perf" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Table Header Controls -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface-container-low p-4 rounded-xl border border-outline-variant/10">
+                <h2 class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest flex-1">Symphony Tracking Ledger</h2>
+                
+                <!-- Tracker counts -->
+                <div class="flex items-center justify-center gap-6 px-4">
+                    <div class="flex flex-col items-center">
+                        <p class="text-[9px] uppercase tracking-widest text-on-surface-variant font-bold mb-1">Tracked</p>
+                        <p class="text-lg font-black text-slate-900 dark:text-slate-100 leading-none" id="dashboard-total-symphonies">0</p>
+                    </div>
+                    <div class="flex flex-col items-center border-x border-outline-variant/20 px-6">
+                        <p class="text-[9px] uppercase tracking-widest text-on-surface-variant font-bold mb-1">Armed</p>
+                        <p class="text-lg font-black text-amber-400 leading-none" id="dashboard-total-armed">0</p>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <p class="text-[9px] uppercase tracking-widest text-on-surface-variant font-bold mb-1">Triggered</p>
+                        <p class="text-lg font-black text-rose-500 leading-none" id="dashboard-total-triggered">0</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-end gap-4 flex-1">
+                    <div class="flex items-center gap-2">
+                        <label for="max-rows-input" class="text-xs text-on-surface-variant font-semibold tracking-wide">Rows Displayed:</label>
+                        <input type="number" id="max-rows-input" class="w-16 bg-surface-container-highest border border-outline-variant/50 rounded px-2.5 py-1 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-primary transition-colors font-mono" value="10" min="1" max="500" onchange="updateMaxRows()">
+                    </div>
+                    <span class="text-xs text-on-surface-variant font-mono" id="last-updated">Last Updated: ---</span>
+                </div>
+            </div>
+
+            <!-- Symphony Table Container -->
+            <div id="accounts-container" class="space-y-8">
+                <div class="text-center py-12 bg-surface-container-low rounded-xl border border-outline-variant/10 italic text-on-surface-variant text-sm">
+                    Connecting to server database ledger...
+                </div>
+            </div>
+        </div>

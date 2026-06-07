@@ -1,0 +1,145 @@
+<div id="dashboard-tab" class="main-tab-pane space-y-6 hidden">
+            <!-- KPI Summary Cards Row -->
+            <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10">
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Avg Guard Alpha</p>
+                    <p class="text-2xl font-black text-secondary leading-tight" id="cumulative-alpha">+0.00%</p>
+                    <p class="text-[10px] text-on-surface-variant/80 mt-1 font-semibold" id="today-alpha">+0.00% Today</p>
+                </div>
+                <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10">
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Win Rate</p>
+                    <p class="text-2xl font-black text-secondary leading-tight" id="cumulative-win-rate">0.0%</p>
+                    <p class="text-[10px] text-on-surface-variant/80 mt-1 font-semibold" id="today-win-rate">0.0% Today</p>
+                </div>
+                <div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/10">
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Saved</p>
+                    <p class="text-2xl font-black text-secondary leading-tight balance-value" id="cumulative-saved" data-raw="0">$0</p>
+                    <p class="text-[10px] text-on-surface-variant/80 mt-1 font-semibold">
+                        <span class="balance-value" id="today-saved" data-raw="0">$0</span> Today
+                    </p>
+                </div>
+            </section>
+
+            <!-- Account Balances Row -->
+            <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Individual Account Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-ind-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-ind" checked onchange="syncChartCheckbox(this, 'chart-toggle-ind-perf')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-ind" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Individual Account</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-ind-dash" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-ind-dash">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-ind" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-ind" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Roth IRA Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-roth-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-roth" checked onchange="syncChartCheckbox(this, 'chart-toggle-roth-perf')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-roth" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Roth IRA</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-roth-dash" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-roth-dash">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-roth" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-roth" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Trad. IRA Card -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 relative overflow-hidden group card-trad-container">
+                    <div class="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-surface-container-high/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-outline-variant/20">
+                        <input type="checkbox" id="chart-toggle-trad" checked onchange="syncChartCheckbox(this, 'chart-toggle-trad-perf')" class="w-3.5 h-3.5 rounded border-outline bg-surface-container text-primary focus:ring-primary focus:ring-offset-0 focus:ring-0 cursor-pointer">
+                        <label for="chart-toggle-trad" class="text-[9px] text-on-surface-variant font-bold uppercase tracking-wider select-none cursor-pointer">Chart</label>
+                    </div>
+                    <h3 class="font-label text-xs tracking-wider uppercase text-on-surface-variant font-bold mb-4">Trad. IRA</h3>
+                    <div class="flex items-end justify-between">
+                        <span class="text-2xl font-black tracking-tighter balance-value" id="portfolio-val-trad-dash" data-raw="0">$0.00</span>
+                        <span class="bg-secondary-container/20 text-secondary px-2.5 py-1 rounded text-[10px] font-bold tracking-tight" id="portfolio-ret-trad-dash">+0.00% Today</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-outline-variant/10 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">Total Return</span>
+                            <span class="font-black text-secondary cumulative-value font-mono text-xs" id="cumulative-return-trad" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                        <div>
+                            <span class="text-on-surface-variant block uppercase font-mono text-[8px] tracking-wider mb-0.5">If Held</span>
+                            <span class="font-bold text-on-surface-variant cumulative-value font-mono text-xs" id="cumulative-held-trad" data-usd="0" data-pct="0">+$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bento grid content -->
+            <section class="grid grid-cols-12 gap-6">
+                <!-- Performance benchmark line graph -->
+                <div class="col-span-12 bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 flex flex-col min-h-[380px]">
+                    <div class="chart-block-header">
+                        <h2 class="chart-block-title">Cumulative returns</h2>
+                        <div data-testid="perf-chart-legend" class="perf-chart-legend" style="display: flex; gap: 1.25rem; align-items: center;">
+                            <div class="legend-item" style="display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; color: var(--studio-ink-dim);">
+                                <div class="legend-swatch" style="width: 1.5rem; height: 2px; background: var(--studio-accent); border-radius: 1px;"></div>
+                                <span>AlphaBotNext (Shadow)</span>
+                            </div>
+                            <div class="legend-item" style="display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; color: var(--studio-ink-dim);">
+                                <div class="legend-swatch-dashed" style="width: 1.5rem; height: 2px; border-top: 2px dashed var(--studio-ink-muted);"></div>
+                                <span>Live (If Held)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrap" style="position: relative; height: clamp(320px, 15vw, 620px);">
+                        <canvas id="performanceBenchmarkChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Today's Automated Exits Section -->
+            <section class="bg-surface-container-low rounded-xl border border-outline-variant/10 overflow-hidden shadow-sm">
+                <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container flex justify-between items-center">
+                    <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Today's Automated Exits</h3>
+                    <span class="text-[10px] font-bold px-2.5 py-0.5 bg-surface-container-highest text-on-surface-variant rounded-full font-mono" id="today-exits-count">0 Exits</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs whitespace-nowrap">
+                        <thead class="text-on-surface-variant bg-surface-container/50 uppercase tracking-wider font-semibold border-b border-outline-variant/10">
+                            <tr>
+                                <th class="px-6 py-3.5">Asset / Symphony</th>
+                                <th class="px-6 py-3.5">Account</th>
+                                <th class="px-6 py-3.5 text-center">Type</th>
+                                <th class="px-6 py-3.5 text-center">Exit Reason</th>
+                                <th class="px-6 py-3.5 text-right">Exit %</th>
+                                <th class="px-6 py-3.5 text-right">If Held (shadow)</th>
+                                <th class="px-6 py-3.5 text-right">Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="today-exits-table-body" class="divide-y divide-outline-variant/10">
+                            <tr>
+                                <td colspan="7" class="px-6 py-8 text-center text-on-surface-variant italic text-xs">
+                                    No automated exits have occurred today.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>

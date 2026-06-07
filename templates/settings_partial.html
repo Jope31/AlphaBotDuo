@@ -1,0 +1,157 @@
+<div id="settings-tab" class="main-tab-pane hidden">
+            <form onsubmit="saveSettings(event)" class="space-y-6">
+                <!-- Header Save Widget -->
+                <div class="flex justify-between items-center">
+                    <h2 class="text-base font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">Configuration Console</h2>
+                    <div class="flex items-center gap-4 header-actions">
+                        <button type="button" onclick="triggerBot()" id="dashboard-trigger-btn" class="bg-transparent hover:bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.05)]">
+                            Force Run Now
+                        </button>
+                        <button type="button" id="btn-force-eod" class="bg-transparent hover:bg-amber-500/10 text-amber-500 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.05)]">
+                            Force EOD Analysis
+                        </button>
+                        <button type="button" id="btn-resend-discord" class="bg-transparent hover:bg-blue-500/10 text-blue-400 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.05)]">
+                            Push Discord Report
+                        </button>
+                        <span id="save-indicator" class="text-xs font-bold text-emerald-400 opacity-0 transition-opacity duration-300 flex items-center gap-1.5 uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[14px]">check_circle</span> Saved
+                        </span>
+                        <button type="submit" id="save-settings-btn" class="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)] active:scale-95 border border-blue-400/20">
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Execution Controls (ON TOP) -->
+                    <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 space-y-6">
+                        <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest border-b border-outline-variant/10 pb-3 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-amber-400">play_circle</span>
+                            Execution Control
+                        </h3>
+                        
+                        <!-- Single Toggle Live / Dry -->
+                        <div class="flex items-center justify-between p-4 rounded-xl border transition-all duration-300" id="live-mode-banner">
+                            <div class="flex flex-col gap-0.5 max-w-[70%]">
+                                <span class="text-xs font-bold uppercase tracking-wider" id="live-mode-title">Dry Run Mode</span>
+                                <span class="text-[10px] text-on-surface-variant leading-snug" id="live-mode-desc">Safe: Bot will simulate trades but bypass actual execution.</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="env-live-mode" class="sr-only peer" onchange="onLiveModeToggle(this)">
+                                <div class="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600 shadow-inner"></div>
+                            </label>
+                        </div>
+
+                        <!-- Execution start time selector field -->
+                        <div>
+                            <label for="env-exec-start" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Execution Start Time</label>
+                            <input type="time" id="env-exec-start" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary font-mono">
+                        </div>
+                    </div>
+
+                    <!-- API Credential parameters -->
+                    <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 space-y-4">
+                        <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest border-b border-outline-variant/10 pb-3 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary">key</span>
+                            API Credentials & System Keys
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="env-comp-key" class="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Composer Key ID</label>
+                                <input type="password" id="env-comp-key" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-3 py-2 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary">
+                            </div>
+                            <div>
+                                <label for="env-comp-sec" class="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Composer Secret Key</label>
+                                <input type="password" id="env-comp-sec" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-3 py-2 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="env-alp-key" class="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Alpaca Key ID</label>
+                                <input type="password" id="env-alp-key" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-3 py-2 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary">
+                            </div>
+                            <div>
+                                <label for="env-alp-sec" class="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Alpaca Secret Key</label>
+                                <input type="password" id="env-alp-sec" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-3 py-2 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="env-discord" class="block text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Discord Webhook URL</label>
+                            <input type="password" id="env-discord" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-3 py-2 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Settings Panel -->
+                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 space-y-4">
+                    <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest border-b border-outline-variant/10 pb-3 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-secondary">account_balance</span>
+                        Account UUIDs & Balance Adjustments
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-surface-container-high/40 p-4 rounded-lg space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-xs font-bold text-primary uppercase">Individual Account</h4>
+                                <div class="flex items-center gap-2">
+                                    <span id="env-acc-ind-status" class="text-[9px] font-bold uppercase tracking-wider text-primary">Enabled</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="env-acc-ind-enabled" class="sr-only peer" checked onchange="document.getElementById('env-acc-ind-status').innerText = this.checked ? 'Enabled' : 'Disabled'; document.getElementById('env-acc-ind-status').className = this.checked ? 'text-[9px] font-bold uppercase tracking-wider text-primary' : 'text-[9px] font-bold uppercase tracking-wider text-slate-500';">
+                                        <div class="w-8 h-4 bg-slate-300 dark:bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary shadow-inner"></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="env-acc-ind" class="block text-[9px] font-bold text-on-surface-variant uppercase mb-1">Account UUID</label>
+                                <input type="text" id="env-acc-ind" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-2.5 py-1.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary font-mono mb-2">
+                                <button type="button" onclick="triggerPortfolioOverhaul(document.getElementById('env-acc-ind').value)" class="w-full justify-center text-[9px] bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/20 px-3 py-2 rounded transition-colors font-bold tracking-widest flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
+                                    SYNC & FLUSH ACCOUNT
+                                </button>
+                            </div>
+                        </div>
+                        <div class="bg-surface-container-high/40 p-4 rounded-lg space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-xs font-bold text-primary uppercase">Roth IRA Account</h4>
+                                <div class="flex items-center gap-2">
+                                    <span id="env-acc-roth-status" class="text-[9px] font-bold uppercase tracking-wider text-primary">Enabled</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="env-acc-roth-enabled" class="sr-only peer" checked onchange="document.getElementById('env-acc-roth-status').innerText = this.checked ? 'Enabled' : 'Disabled'; document.getElementById('env-acc-roth-status').className = this.checked ? 'text-[9px] font-bold uppercase tracking-wider text-primary' : 'text-[9px] font-bold uppercase tracking-wider text-slate-500';">
+                                        <div class="w-8 h-4 bg-slate-300 dark:bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary shadow-inner"></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="env-acc-roth" class="block text-[9px] font-bold text-on-surface-variant uppercase mb-1">Account UUID</label>
+                                <input type="text" id="env-acc-roth" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-2.5 py-1.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary font-mono mb-2">
+                                <button type="button" onclick="triggerPortfolioOverhaul(document.getElementById('env-acc-roth').value)" class="w-full justify-center text-[9px] bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/20 px-3 py-2 rounded transition-colors font-bold tracking-widest flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
+                                    SYNC & FLUSH ACCOUNT
+                                </button>
+                            </div>
+                        </div>
+                        <div class="bg-surface-container-high/40 p-4 rounded-lg space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-xs font-bold text-primary uppercase">Trad. IRA Account</h4>
+                                <div class="flex items-center gap-2">
+                                    <span id="env-acc-trad-status" class="text-[9px] font-bold uppercase tracking-wider text-primary">Enabled</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="env-acc-trad-enabled" class="sr-only peer" checked onchange="document.getElementById('env-acc-trad-status').innerText = this.checked ? 'Enabled' : 'Disabled'; document.getElementById('env-acc-trad-status').className = this.checked ? 'text-[9px] font-bold uppercase tracking-wider text-primary' : 'text-[9px] font-bold uppercase tracking-wider text-slate-500';">
+                                        <div class="w-8 h-4 bg-slate-300 dark:bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary shadow-inner"></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="env-acc-trad" class="block text-[9px] font-bold text-on-surface-variant uppercase mb-1">Account UUID</label>
+                                <input type="text" id="env-acc-trad" class="w-full bg-surface-container-highest border border-outline-variant/30 rounded px-2.5 py-1.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:border-primary font-mono mb-2">
+                                <button type="button" onclick="triggerPortfolioOverhaul(document.getElementById('env-acc-trad').value)" class="w-full justify-center text-[9px] bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/20 px-3 py-2 rounded transition-colors font-bold tracking-widest flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
+                                    SYNC & FLUSH ACCOUNT
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </form>
+        </div>
