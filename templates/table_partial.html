@@ -25,11 +25,7 @@
                     <span class="text-[9px] uppercase tracking-widest text-on-surface-variant/70 font-bold" title="Capital-Weighted Account Return">Actual Return:</span>
                     <span class="font-mono font-bold {{ total_return_color }}">{{ total_return_formatted }}</span>
                 </div>
-                <div class="h-4 w-px bg-outline-variant/20"></div>
-                <button onclick="triggerPortfolioOverhaul('{{ acc_id }}')" class="text-[9px] bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/20 px-3 py-1.5 rounded transition-colors font-bold tracking-widest flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
-                    SYNC & FLUSH PORTFOLIO
-                </button>
+
                 <div class="h-4 w-px bg-outline-variant/20"></div>
                 <button onclick="openConfirmModal('{{ acc_id }}')" class="text-[9px] bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 px-3 py-1.5 rounded transition-colors font-bold tracking-widest flex items-center gap-1.5">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -141,21 +137,79 @@
                             {% set stop_level_str = lock_icon ~ "%.2f"|format(stop) ~ '%' if stop is not none and stop != -999.0 else '---' %}
                         {% endif %}
 
-                        <tr class="hover:bg-surface-container-high transition-colors">
+                        <tr class="hover:bg-surface-container-high transition-colors cursor-pointer group" onclick="toggleAccordion('{{ sym.id }}', '{{ acc_id }}', '{{ safe_name }}')">
                             <td class="px-4 py-3 text-slate-800 dark:text-slate-200">
                                 <div class="flex items-center gap-2 max-w-[250px]">
-                                    <button onclick="openSymphonyDetailModal('{{ sym.id }}', '{{ safe_name }}')" class="text-on-surface-variant hover:text-primary transition-colors flex-shrink-0" title="Command Center">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    </button>
-                                    <button onclick="openSymphonyDetailModal('{{ sym.id }}', '{{ safe_name }}')" class="truncate hover:text-primary transition-colors text-left font-medium" title="{{ name }}">{{ name }}</button>
+                                    <span id="icon_{{ sym.id }}" class="text-on-surface-variant group-hover:text-primary transition-all duration-300 transform flex-shrink-0">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </span>
+                                    <span class="truncate group-hover:text-primary transition-colors text-left font-medium" title="{{ name }}">{{ name }}</span>
                                 </div>
                             </td>
                             <td class="px-4 py-3 text-right font-mono {{ mc_color }}">{{ mc_prob }}</td>
                             <td class="px-4 py-3 text-center">{{ status_badge | safe }}</td>
                             <td class="px-4 py-3 text-right font-mono text-on-surface-variant/80">{{ stop_level_str | safe }}</td>
                             <td class="px-4 py-3 text-right font-mono {{ cur_ret_color }}">{{ cur_ret_str | safe }}</td>
-                            <td class="px-4 py-3 text-right font-mono {{ hwm_color }}">{{ sym.shadow_hwm | round(2) }}%</td>
+                            <td class="px-4 py-3 text-right font-mono {{ hwm_color }}">{{ hwm_str | safe }}</td>
                             <td class="px-4 py-3 text-right font-mono">{{ shadow_str | safe }}</td>
+                        </tr>
+
+                        <!-- Accordion Row -->
+                        <tr id="acc_{{ sym.id }}" class="hidden bg-surface-container-low/50 border-b-2 border-outline-variant/10 shadow-inner">
+                            <td colspan="7" class="p-0">
+                                <div class="grid grid-cols-12 gap-0">
+                                    <!-- Chart Section (Left 8 Cols) -->
+                                    <div class="col-span-12 xl:col-span-8 p-4 border-r border-outline-variant/10 relative flex flex-col">
+                                        <div class="absolute top-4 right-4 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 bg-surface-container-high/80 backdrop-blur border border-outline-variant/20 px-2 py-1.5 rounded-lg shadow-sm">
+                                            <div class="flex items-center gap-1.5"><div class="w-2.5 h-0.5 bg-blue-500 rounded"></div><span class="text-[9px] font-semibold text-on-surface-variant uppercase tracking-widest">Return</span></div>
+                                            <div class="flex items-center gap-1.5"><div class="w-2.5 h-0.5 border-t border-dashed border-emerald-500"></div><span class="text-[9px] font-semibold text-on-surface-variant uppercase tracking-widest">Safe Floor</span></div>
+                                            <div class="flex items-center gap-1.5"><div class="w-2 h-2 bg-slate-400 border border-slate-500 rounded-[1px] border-dashed"></div><span class="text-[9px] font-semibold text-on-surface-variant uppercase tracking-widest">Shadow</span></div>
+                                        </div>
+                                        <div class="h-[260px] w-full mb-4">
+                                            <canvas id="chart_{{ sym.id }}"></canvas>
+                                        </div>
+                                        
+                                        <!-- Telemetry (Moved under chart) -->
+                                        <div class="bg-surface-container/30 rounded-lg p-3 border border-outline-variant/10">
+                                            <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                                <svg class="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                                                Risk Telemetry
+                                            </h4>
+                                            <div id="risk_telemetry_{{ sym.id }}" class="grid grid-cols-3 gap-x-4 gap-y-3">
+                                                <div class="bg-surface-container-high rounded p-2 border border-outline-variant/10">
+                                                    <div class="text-[9px] uppercase tracking-widest text-on-surface-variant/70 font-semibold mb-0.5">MC Beat Prob</div>
+                                                    <div class="text-sm font-mono font-bold text-blue-400">{{ mc_prob }}</div>
+                                                </div>
+                                                <div class="bg-surface-container-high rounded p-2 border border-outline-variant/10">
+                                                    <div class="text-[9px] uppercase tracking-widest text-on-surface-variant/70 font-semibold mb-0.5">Live Alpha</div>
+                                                    <div class="text-sm font-mono font-bold {{ cur_ret_color }}">{{ cur_ret_str | safe }}</div>
+                                                </div>
+                                                <div class="bg-surface-container-high rounded p-2 border border-outline-variant/10">
+                                                    <div class="text-[9px] uppercase tracking-widest text-on-surface-variant/70 font-semibold mb-0.5">Guard Shield</div>
+                                                    <div class="text-xs font-mono text-slate-300 flex items-center gap-2 mt-0.5">
+                                                        <span class="bg-outline-variant/20 px-1.5 py-0.5 rounded text-[10px]">{{ stop_level_str | safe }}</span>
+                                                        <span class="text-[10px] text-on-surface-variant">Trailing Stop</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Logs Section (Right 4 Cols - Full Height) -->
+                                    <div class="col-span-12 xl:col-span-4 flex flex-col border-l border-outline-variant/5">
+                                        <!-- Precision Logs (Taking full height) -->
+                                        <div class="p-4 flex-1 flex flex-col bg-surface-container/10">
+                                            <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-1.5 shrink-0">
+                                                <svg class="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                Precision Logs
+                                            </h4>
+                                            <div id="logs_{{ sym.id }}" class="flex-1 overflow-y-auto max-h-[380px] custom-scrollbar pr-2">
+                                                <div class="flex items-center justify-center h-full text-xs text-on-surface-variant/50 font-semibold italic animate-pulse">Loading execution telemetry...</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
