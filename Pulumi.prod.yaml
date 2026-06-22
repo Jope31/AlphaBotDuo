@@ -1,0 +1,17 @@
+config:
+  alphabot-deployment:LIBSQL_URL:
+    secure: AAABAKPD0Glz2F9+nXzsTXn3NDkncd8QPhu07zZ71LeA3hUszLL465KifmaYjxs+aMogEkDOI7WQP/MjAlGt0f+/s8RobDkMSe9y5drcYKIKeg==
+  alphabot-deployment:LIBSQL_AUTH_TOKEN:
+    secure: AAABAGaP/Ahx9bwCfwmGrxxmYIMnpw6yDxAPnkEUxZAY5LVfQEUElQOW8VVbvOo10UnygTpzdrr0O+I01EP71r3kaUX8TvYiwz6hy6lChy/5dM2ycni/4XFNT9wQTZPYSjWhf3zBLKRzJbVS8a9/a3SKkLw5Bx14DuXKPkaYwOrROSCFxPdSaLPz0k/3jDiZayDT4e/8UghxhIn6rbav01FbW52iv6l4VV7e0T4sKsqpAjelcuCd84PFHnVreqC+xk+ODD7TYUcyRgdgVxl0/bETAcBG3AjHY3GxoGpjq1FehvBBakhcvv2e4lvGlilIxBwMPGNq3ZAtmKssC98ec8o79uC7m4PINoYH9n47O4HfnIKnd5e8M9j7Da8+rSOSw96MaZ7rsXevr3Y=
+  alphabot-deployment:ALPACA_KEY:
+    secure: AAABAOoBdNF8APp6xxaOoJ3UQn2juWjF8I19rrw8vED5jzDyIljLMfOZCOM3w4s6o07KD8gY890BTw==
+  alphabot-deployment:COMPOSER_KEY:
+    secure: AAABAO9ksOXk9O45ysZ97avFuAAJSwzVi8xXOQHTiUjaw6GfFkbtb32Sk5rVXlWJ4zfx0UiAKI/GclT3ovO5nMC2gFncpbolLLn/Lw==
+  digitalocean:token:
+    secure: AAABALlyV95zHr7PIye5T131+bF3N2TkmDz/qS7NmZXxLx6LZJaIjqqmEHZJdPPuMSy4rI+DyNzPpL2RIgpzCu8kvGX+ZRCCNLYcBSdrl9EYtZldXmLdg4foq68ahUy/AG4Nwb8Kzw==
+  alphabot-deployment:ALPACA_SECRET:
+    secure: AAABAJHpfMhqF3eC2GH3/fjAQtdJfYYj9ExcIFaucfCpO4PFhfEWcL42dhA59mKg0Wp2955/69TBcfD1ay6Iwqygy0fQNAnjjbBEmw==
+  alphabot-deployment:COMPOSER_SECRET:
+    secure: AAABAMCKBvE9hqRDFZ1ujaomNt9G8XsIuxqd2ADtNu6S7cHnJr5uqObBUQLZqXHR9T8P3tH/MIWNB7f5Dqw+gt3xUgI=
+  alphabot-deployment:DISCORD_WEBHOOK_URL:
+    secure: AAABAN19Q2mdG0c+3eP6rdmO6tHCt3tNvV2Hxh8MdzWdHvslkm/IC1PzWKNNzLShufo8s9Zk/zuOTQgpKBBIEm6sFIIWBMRKKEYbywqeBVOvOh9q4jfQei1qew/OldqMSlxZVHe7+tCsrwhsi+12ZvKtHXgrkVT0sTq74+4B0OdJOIFLaWvVQmCHGyYLFS5sstB74u5JosRc

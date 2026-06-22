@@ -2,7 +2,9 @@ requests
 numpy
 pandas
 python-dotenv
-Flask
-schedule
 optuna
 joblib
+aiohttp
+turso
+pulumi
+pulumi_digitalocean
