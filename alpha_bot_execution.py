@@ -1400,10 +1400,24 @@ async def trigger_run(request):
     asyncio.create_task(asyncio.to_thread(main))
     return web.Response(text="Triggered")
 
-if __name__ == "__main__":
+async def main_lifecycle():
     app = web.Application()
     app.router.add_get('/', health_check)
     app.router.add_get('/health', health_check)
     app.router.add_post('/trigger', trigger_run)
-    app.on_startup.append(background_trading_task)
-    web.run_app(app, host="0.0.0.0", port=5002)
+    
+    # Fire up the background trading loop as a completely independent, unblocked concurrent task
+    asyncio.create_task(background_trading_task(app))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 5002)
+    await site.start()
+    print("🚀 AlphaBotDuo Network Port 5002 is fully open and listening!", flush=True)
+    
+    # Keep the main process alive infinitely
+    while True:
+        await asyncio.sleep(3600)
+
+if __name__ == "__main__":
+    asyncio.run(main_lifecycle())
