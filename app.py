@@ -45,7 +45,8 @@ def trigger_alpha_bot(force=False):
         try:
             env_latest = dotenv_values(ENV_FILE_PATH)
             for k, v in env_latest.items():
-                if v is not None:
+                if v is not None and str(v).strip() != "":
+                    # Only override if it's not a blank placeholder
                     env[k] = str(v)
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Warning: Failed to reload .env for child process: {e}", flush=True)
