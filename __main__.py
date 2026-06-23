@@ -17,8 +17,8 @@ app = do.App("alpha-bot-app",
         services=[
             do.AppSpecServiceArgs(
                 name="alpha-bot-service",
-                git=do.AppSpecServiceGitArgs(
-                    repo_clone_url="https://github.com/Jope31/AlphaBotDuo.git",
+                github=do.AppSpecServiceGithubArgs(
+                    repo="Jope31/AlphaBotDuo",
                     branch="main",
                     deploy_on_push=False,
                 ),
