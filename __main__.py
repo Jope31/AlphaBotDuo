@@ -10,6 +10,9 @@ composer_key = config.require_secret("COMPOSER_KEY")
 composer_secret = config.require_secret("COMPOSER_SECRET")
 discord_url = config.require_secret("DISCORD_WEBHOOK_URL")
 
+flask_user = config.require_secret("FLASK_USERNAME")
+flask_pass = config.require_secret("FLASK_PASSWORD")
+
 app = do.App("alpha-bot-app",
     spec=do.AppSpecArgs(
         name="alpha-bot-app",
@@ -42,6 +45,9 @@ app = do.App("alpha-bot-app",
                     do.AppSpecServiceEnvArgs(key="COMPOSER_SECRET", value=composer_secret, type="SECRET"),
                     
                     do.AppSpecServiceEnvArgs(key="DISCORD_WEBHOOK_URL", value=discord_url, type="SECRET"),
+
+                    do.AppSpecServiceEnvArgs(key="FLASK_USERNAME", value=flask_user, type="SECRET"),
+                    do.AppSpecServiceEnvArgs(key="FLASK_PASSWORD", value=flask_pass, type="SECRET"),
                 ]
             )
         ]
