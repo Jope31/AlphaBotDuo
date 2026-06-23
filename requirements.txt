@@ -10,3 +10,4 @@ pulumi
 pulumi_digitalocean
 Flask
 schedule
+Flask-BasicAuth

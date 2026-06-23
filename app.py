@@ -13,6 +13,7 @@ import schedule
 import requests
 import logging
 from flask import Flask, render_template, jsonify, request
+from flask_basicauth import BasicAuth
 from dotenv import dotenv_values, set_key
 
 import database
@@ -20,6 +21,12 @@ import database
 ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 app = Flask(__name__)
+
+app.config['BASIC_AUTH_USERNAME'] = os.environ.get('FLASK_USERNAME', 'admin')
+app.config['BASIC_AUTH_PASSWORD'] = os.environ.get('FLASK_PASSWORD', 'admin')
+app.config['BASIC_AUTH_FORCE'] = True
+basic_auth = BasicAuth(app)
+
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
