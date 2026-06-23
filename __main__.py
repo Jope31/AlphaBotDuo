@@ -20,6 +20,7 @@ app = do.App("alpha-bot-app",
                 git=do.AppSpecServiceGitArgs(
                     repo_clone_url="https://github.com/Jope31/AlphaBotDuo.git",
                     branch="main",
+                    deploy_on_push=False,
                 ),
                 run_command="python app.py",
                 http_port=5000,
