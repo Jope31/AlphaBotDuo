@@ -24,7 +24,7 @@ app = do.App("alpha-bot-app",
                 run_command="python app.py",
                 http_port=5000,
                 instance_count=1,
-                instance_size_slug="apps-s-1vcpu-512mb",
+                instance_size_slug="apps-s-1vcpu-0.5gb",
                 envs=[
                     do.AppSpecServiceEnvArgs(key="LIBSQL_URL", value=libsql_url, type="SECRET"),
                     do.AppSpecServiceEnvArgs(key="LIBSQL_AUTH_TOKEN", value=libsql_auth_token, type="SECRET"),
