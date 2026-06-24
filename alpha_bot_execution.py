@@ -34,12 +34,12 @@ ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_FILE_PATH)
 
 # Ensure the system captures any valid naming convention passed down from the cloud infrastructure
-COMPOSER_KEY_ID = os.getenv("COMPOSER_KEY") or os.getenv("COMPOSER_KEY_ID")
+COMPOSER_KEY = os.getenv("COMPOSER_KEY") or os.getenv("COMPOSER_KEY_ID")
 COMPOSER_SECRET = os.getenv("COMPOSER_SECRET")
 ALPACA_KEY = os.getenv("ALPACA_KEY") or os.getenv("ALPACA_KEY_ID") or os.getenv("APCA_API_KEY_ID")
 ALPACA_SECRET = os.getenv("ALPACA_SECRET") or os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
 
-if not all([COMPOSER_KEY_ID, COMPOSER_SECRET, ALPACA_KEY, ALPACA_SECRET]):
+if not all([COMPOSER_KEY, COMPOSER_SECRET, ALPACA_KEY, ALPACA_SECRET]):
     print("CRITICAL: Missing API Keys. Please check your cloud environment variables.")
     import sys
     sys.exit(1)
@@ -88,7 +88,7 @@ YAHOO_FINANCE_BASE_URL = "https://query2.finance.yahoo.com/v8/finance/chart"
 # ==========================================
 def get_composer_headers(key=None, secret=None):
     return {
-        "x-api-key-id": key or COMPOSER_KEY_ID,
+        "x-api-key-id": key or COMPOSER_KEY,
         "authorization": f"Bearer {secret or COMPOSER_SECRET}",
         "Content-Type": "application/json",
     }
