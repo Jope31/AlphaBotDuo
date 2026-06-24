@@ -33,8 +33,17 @@ import autotuner
 ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_FILE_PATH)
 
-COMPOSER_KEY_ID = os.getenv("COMPOSER_KEY_ID")
+# Ensure the system captures any valid naming convention passed down from the cloud infrastructure
+COMPOSER_KEY_ID = os.getenv("COMPOSER_KEY") or os.getenv("COMPOSER_KEY_ID")
 COMPOSER_SECRET = os.getenv("COMPOSER_SECRET")
+ALPACA_KEY = os.getenv("ALPACA_KEY") or os.getenv("ALPACA_KEY_ID") or os.getenv("APCA_API_KEY_ID")
+ALPACA_SECRET = os.getenv("ALPACA_SECRET") or os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
+
+if not all([COMPOSER_KEY_ID, COMPOSER_SECRET, ALPACA_KEY, ALPACA_SECRET]):
+    print("CRITICAL: Missing API Keys. Please check your cloud environment variables.")
+    import sys
+    sys.exit(1)
+
 acc_ind = os.getenv("ACCOUNT_INDIVIDUAL", "").strip()
 acc_roth = os.getenv("ACCOUNT_ROTH", "").strip()
 acc_trad = os.getenv("ACCOUNT_TRAD", "").strip()
@@ -45,9 +54,6 @@ ACCOUNT_ENABLED_MAP = {
     acc_roth: os.getenv("ACCOUNT_ROTH_ENABLED", "True").lower() in ("true", "1", "yes") if acc_roth else False,
     acc_trad: os.getenv("ACCOUNT_TRAD_ENABLED", "True").lower() in ("true", "1", "yes") if acc_trad else False,
 }
-
-ALPACA_KEY = os.getenv("ALPACA_KEY")
-ALPACA_SECRET = os.getenv("ALPACA_SECRET")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # --- EXECUTION MODE ---
@@ -485,9 +491,7 @@ def main():
                 return
             print("  -> Rebalance blackout active, but --force flag detected! Bypassing...", flush=True)
 
-        if not COMPOSER_KEY_ID or not ALPACA_KEY:
-            print("CRITICAL: Missing API Keys. Please check your .env file.", flush=True)
-            return
+        pass
 
         bot_state = database.load_state()
         chart_history = database.load_chart_history()
